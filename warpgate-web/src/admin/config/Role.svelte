@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { api, type Role, type Target, type User } from 'admin/lib/api'
+    import { api, type Role, type Target, type User, type TargetGroup } from 'admin/lib/api'
     import AsyncButton from 'common/AsyncButton.svelte'
     import { link, replace } from 'svelte-spa-router'
     import { FormGroup, Input } from '@sveltestrap/sveltestrap'
@@ -7,6 +7,7 @@
     import Alert from 'common/sveltestrap-s5-ports/Alert.svelte'
     import Loadable from 'common/Loadable.svelte'
     import ItemList, { type PaginatedResponse } from 'common/ItemList.svelte'
+    import GroupColorCircle from 'common/GroupColorCircle.svelte'
     import * as rx from 'rxjs'
 
     interface Props {
@@ -46,6 +47,18 @@
                 items: targets,
                 offset: 0,
                 total: targets.length,
+            })),
+        )
+    }
+
+    function loadTargetGroups (): rx.Observable<PaginatedResponse<TargetGroup>> {
+        return rx.from(api.getRoleTargetGroups({
+            id: params.id,
+        })).pipe(
+            rx.map(groups => ({
+                items: groups,
+                offset: 0,
+                total: groups.length,
             })),
         )
     }
@@ -157,6 +170,32 @@
         {/snippet}
         {#snippet empty()}
             <Alert color="info">This role has no targets assigned to it</Alert>
+        {/snippet}
+    </ItemList>
+
+    <h4 class="mt-4">Assigned target groups</h4>
+
+    <ItemList load={loadTargetGroups}>
+        {#snippet item(group)}
+            <a
+                class="list-group-item list-group-item-action d-flex align-items-center"
+                href="/config/target-groups/{group.id}"
+                use:link>
+                {#if group.color}
+                    <span class="me-2"><GroupColorCircle color={group.color} /></span>
+                {/if}
+                <div class="me-auto">
+                    <strong>
+                        {group.name}
+                    </strong>
+                    {#if group.description}
+                        <small class="d-block text-muted">{group.description}</small>
+                    {/if}
+                </div>
+            </a>
+        {/snippet}
+        {#snippet empty()}
+            <Alert color="info">This role has no target groups assigned to it</Alert>
         {/snippet}
     </ItemList>
 </div>

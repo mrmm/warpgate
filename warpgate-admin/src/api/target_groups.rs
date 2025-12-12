@@ -11,8 +11,8 @@ use sea_orm::{
 };
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use warpgate_common::WarpgateError;
-use warpgate_db_entities::TargetGroup;
+use warpgate_common::{Role as RoleConfig, WarpgateError};
+use warpgate_db_entities::{Role, TargetGroup, TargetGroupRoleAssignment};
 use warpgate_db_entities::TargetGroup::BootstrapThemeColor;
 
 use super::AnySecurityScheme;
@@ -226,5 +226,143 @@ impl DetailApi {
         // Then delete the group
         group.delete(&*db).await?;
         Ok(DeleteTargetGroupResponse::Deleted)
+    }
+}
+
+// Role assignment types and responses for target groups
+#[derive(ApiResponse)]
+enum GetTargetGroupRolesResponse {
+    #[oai(status = 200)]
+    Ok(Json<Vec<RoleConfig>>),
+    #[oai(status = 404)]
+    NotFound,
+}
+
+#[derive(ApiResponse)]
+enum AddTargetGroupRoleResponse {
+    #[oai(status = 201)]
+    Created,
+    #[oai(status = 409)]
+    AlreadyExists,
+}
+
+#[derive(ApiResponse)]
+enum DeleteTargetGroupRoleResponse {
+    #[oai(status = 204)]
+    Deleted,
+    #[oai(status = 404)]
+    NotFound,
+}
+
+pub struct RolesApi;
+
+#[OpenApi]
+impl RolesApi {
+    #[oai(
+        path = "/target-groups/:id/roles",
+        method = "get",
+        operation_id = "get_target_group_roles"
+    )]
+    async fn api_get_target_group_roles(
+        &self,
+        db: Data<&Arc<Mutex<DatabaseConnection>>>,
+        id: Path<Uuid>,
+        _sec_scheme: AnySecurityScheme,
+    ) -> Result<GetTargetGroupRolesResponse, WarpgateError> {
+        let db = db.lock().await;
+
+        let Some(group) = TargetGroup::Entity::find_by_id(*id).one(&*db).await? else {
+            return Ok(GetTargetGroupRolesResponse::NotFound);
+        };
+
+        // Get all role assignments for this group
+        let assignments = TargetGroupRoleAssignment::Entity::find()
+            .filter(TargetGroupRoleAssignment::Column::TargetGroupId.eq(group.id))
+            .all(&*db)
+            .await?;
+
+        let mut roles = Vec::new();
+        for assignment in assignments {
+            if let Some(role) = Role::Entity::find_by_id(assignment.role_id)
+                .one(&*db)
+                .await?
+            {
+                roles.push(role.into());
+            }
+        }
+
+        Ok(GetTargetGroupRolesResponse::Ok(Json(roles)))
+    }
+
+    #[oai(
+        path = "/target-groups/:id/roles/:role_id",
+        method = "post",
+        operation_id = "add_target_group_role"
+    )]
+    async fn api_add_target_group_role(
+        &self,
+        db: Data<&Arc<Mutex<DatabaseConnection>>>,
+        id: Path<Uuid>,
+        role_id: Path<Uuid>,
+        _sec_scheme: AnySecurityScheme,
+    ) -> Result<AddTargetGroupRoleResponse, WarpgateError> {
+        let db = db.lock().await;
+
+        // Check if assignment already exists
+        if !TargetGroupRoleAssignment::Entity::find()
+            .filter(TargetGroupRoleAssignment::Column::TargetGroupId.eq(id.0))
+            .filter(TargetGroupRoleAssignment::Column::RoleId.eq(role_id.0))
+            .all(&*db)
+            .await?
+            .is_empty()
+        {
+            return Ok(AddTargetGroupRoleResponse::AlreadyExists);
+        }
+
+        let values = TargetGroupRoleAssignment::ActiveModel {
+            target_group_id: Set(id.0),
+            role_id: Set(role_id.0),
+            ..Default::default()
+        };
+
+        values.insert(&*db).await?;
+
+        Ok(AddTargetGroupRoleResponse::Created)
+    }
+
+    #[oai(
+        path = "/target-groups/:id/roles/:role_id",
+        method = "delete",
+        operation_id = "delete_target_group_role"
+    )]
+    async fn api_delete_target_group_role(
+        &self,
+        db: Data<&Arc<Mutex<DatabaseConnection>>>,
+        id: Path<Uuid>,
+        role_id: Path<Uuid>,
+        _sec_scheme: AnySecurityScheme,
+    ) -> Result<DeleteTargetGroupRoleResponse, WarpgateError> {
+        let db = db.lock().await;
+
+        let Some(_group) = TargetGroup::Entity::find_by_id(id.0).one(&*db).await? else {
+            return Ok(DeleteTargetGroupRoleResponse::NotFound);
+        };
+
+        let Some(_role) = Role::Entity::find_by_id(role_id.0).one(&*db).await? else {
+            return Ok(DeleteTargetGroupRoleResponse::NotFound);
+        };
+
+        let Some(assignment) = TargetGroupRoleAssignment::Entity::find()
+            .filter(TargetGroupRoleAssignment::Column::TargetGroupId.eq(id.0))
+            .filter(TargetGroupRoleAssignment::Column::RoleId.eq(role_id.0))
+            .one(&*db)
+            .await?
+        else {
+            return Ok(DeleteTargetGroupRoleResponse::NotFound);
+        };
+
+        assignment.delete(&*db).await?;
+
+        Ok(DeleteTargetGroupRoleResponse::Deleted)
     }
 }

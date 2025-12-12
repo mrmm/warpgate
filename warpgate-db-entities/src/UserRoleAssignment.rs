@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use poem_openapi::Object;
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
@@ -11,6 +12,8 @@ pub struct Model {
     pub id: i32,
     pub user_id: Uuid,
     pub role_id: Uuid,
+    #[sea_orm(nullable)]
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]

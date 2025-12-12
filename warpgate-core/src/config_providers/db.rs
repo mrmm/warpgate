@@ -17,7 +17,7 @@ use warpgate_common::auth::{
 use warpgate_common::helpers::hash::verify_password_hash;
 use warpgate_common::helpers::otp::verify_totp;
 use warpgate_common::{
-    Role, Target, User, UserAuthCredential, UserPasswordCredential, UserPublicKeyCredential,
+    Target, User, UserAuthCredential, UserPasswordCredential, UserPublicKeyCredential,
     UserRequireCredentialsPolicy, UserSsoCredential, UserTotpCredential, WarpgateError,
 };
 use warpgate_db_entities as entities;
@@ -347,6 +347,7 @@ impl ConfigProvider for DatabaseConfigProvider {
         target_name: &str,
     ) -> Result<bool, WarpgateError> {
         let db = self.db.lock().await;
+        let now = Utc::now();
 
         let target_model = entities::Target::Entity::find()
             .filter(entities::Target::Column::Name.eq(target_name))
@@ -368,27 +369,171 @@ impl ConfigProvider for DatabaseConfigProvider {
             return Ok(false);
         };
 
-        let target_roles: HashSet<String> = target_model
-            .find_related(entities::Role::Entity)
+        // Get user's valid (non-expired) role IDs
+        let user_role_assignments = entities::UserRoleAssignment::Entity::find()
+            .filter(entities::UserRoleAssignment::Column::UserId.eq(user_model.id))
             .all(&*db)
-            .await?
+            .await?;
+
+        let valid_user_role_ids: HashSet<uuid::Uuid> = user_role_assignments
             .into_iter()
-            .map(Into::<Role>::into)
-            .map(|x| x.name)
+            .filter(|assignment| {
+                // Assignment is valid if expires_at is NULL or in the future
+                assignment.expires_at.map(|exp| exp > now).unwrap_or(true)
+            })
+            .map(|assignment| assignment.role_id)
             .collect();
 
-        let user_roles: HashSet<String> = user_model
-            .find_related(entities::Role::Entity)
+        if valid_user_role_ids.is_empty() {
+            return Ok(false);
+        }
+
+        // Get target's valid (non-expired) role IDs via direct assignment
+        let target_role_assignments = entities::TargetRoleAssignment::Entity::find()
+            .filter(entities::TargetRoleAssignment::Column::TargetId.eq(target_model.id))
             .all(&*db)
-            .await?
+            .await?;
+
+        let valid_target_role_ids: HashSet<uuid::Uuid> = target_role_assignments
             .into_iter()
-            .map(Into::<Role>::into)
-            .map(|x| x.name)
+            .filter(|assignment| {
+                // Assignment is valid if expires_at is NULL or in the future
+                assignment.expires_at.map(|exp| exp > now).unwrap_or(true)
+            })
+            .map(|assignment| assignment.role_id)
             .collect();
 
-        let intersect = user_roles.intersection(&target_roles).count() > 0;
+        // Check direct target-role access
+        let direct_access = valid_user_role_ids
+            .intersection(&valid_target_role_ids)
+            .count()
+            > 0;
 
-        Ok(intersect)
+        if direct_access {
+            return Ok(true);
+        }
+
+        // Check group-based access if target belongs to a group
+        if let Some(group_id) = target_model.group_id {
+            let group_role_assignments = entities::TargetGroupRoleAssignment::Entity::find()
+                .filter(entities::TargetGroupRoleAssignment::Column::TargetGroupId.eq(group_id))
+                .all(&*db)
+                .await?;
+
+            let group_role_ids: HashSet<uuid::Uuid> = group_role_assignments
+                .into_iter()
+                .map(|assignment| assignment.role_id)
+                .collect();
+
+            let group_access = valid_user_role_ids.intersection(&group_role_ids).count() > 0;
+
+            if group_access {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    async fn authorize_file_transfer(
+        &mut self,
+        username: &str,
+        target_name: &str,
+        target_allows_sftp: bool,
+    ) -> Result<bool, WarpgateError> {
+        let db = self.db.lock().await;
+        let now = Utc::now();
+
+        let target_model = entities::Target::Entity::find()
+            .filter(entities::Target::Column::Name.eq(target_name))
+            .one(&*db)
+            .await?;
+
+        let user_model = entities::User::Entity::find()
+            .filter(entities::User::Column::Username.eq(username))
+            .one(&*db)
+            .await?;
+
+        let Some(user_model) = user_model else {
+            error!("User not found for file transfer check: {}", username);
+            return Ok(false);
+        };
+
+        let Some(target_model) = target_model else {
+            warn!("Target not found for file transfer check: {}", target_name);
+            return Ok(false);
+        };
+
+        // Get user's valid (non-expired) role IDs
+        let user_role_assignments = entities::UserRoleAssignment::Entity::find()
+            .filter(entities::UserRoleAssignment::Column::UserId.eq(user_model.id))
+            .all(&*db)
+            .await?;
+
+        let valid_user_role_ids: HashSet<uuid::Uuid> = user_role_assignments
+            .into_iter()
+            .filter(|assignment| {
+                assignment.expires_at.map(|exp| exp > now).unwrap_or(true)
+            })
+            .map(|assignment| assignment.role_id)
+            .collect();
+
+        if valid_user_role_ids.is_empty() {
+            return Ok(false);
+        }
+
+        // Get target role assignments for this target and user's roles
+        let target_role_assignments = entities::TargetRoleAssignment::Entity::find()
+            .filter(entities::TargetRoleAssignment::Column::TargetId.eq(target_model.id))
+            .all(&*db)
+            .await?;
+
+        // Check for role-level file transfer overrides
+        // Priority: deny > allow > inherit from target
+        let mut has_allow = false;
+        let mut has_deny = false;
+
+        for assignment in target_role_assignments {
+            // Only consider valid (non-expired) assignments for user's roles
+            let is_valid = assignment.expires_at.map(|exp| exp > now).unwrap_or(true);
+            let is_user_role = valid_user_role_ids.contains(&assignment.role_id);
+
+            if is_valid && is_user_role {
+                match assignment.allow_file_transfer.as_deref() {
+                    Some("deny") => has_deny = true,
+                    Some("allow") => has_allow = true,
+                    _ => {} // null means inherit from target
+                }
+            }
+        }
+
+        // Apply priority: deny > allow > inherit
+        if has_deny {
+            info!(
+                username,
+                target = target_name,
+                "File transfer denied by role override"
+            );
+            return Ok(false);
+        }
+
+        if has_allow {
+            info!(
+                username,
+                target = target_name,
+                "File transfer allowed by role override"
+            );
+            return Ok(true);
+        }
+
+        // Fall back to target default
+        info!(
+            username,
+            target = target_name,
+            target_allows_sftp,
+            "File transfer using target default"
+        );
+        Ok(target_allows_sftp)
     }
 
     async fn apply_sso_role_mappings(

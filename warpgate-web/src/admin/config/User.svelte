@@ -1,8 +1,8 @@
 <script lang="ts">
-    import { api, type Role, type User } from 'admin/lib/api'
+    import { api, type Role, type User, type UserRoleAssignmentResponse } from 'admin/lib/api'
     import AsyncButton from 'common/AsyncButton.svelte'
     import { replace } from 'svelte-spa-router'
-    import { FormGroup, Input } from '@sveltestrap/sveltestrap'
+    import { FormGroup, Input, Badge } from '@sveltestrap/sveltestrap'
     import { stringifyError } from 'common/errors'
     import Alert from 'common/sveltestrap-s5-ports/Alert.svelte'
     import CredentialEditor from '../CredentialEditor.svelte'
@@ -18,7 +18,8 @@
     let error: string|null = $state(null)
     let user: User | undefined = $state()
     let allRoles: Role[] = $state([])
-    let roleIsAllowed: Record<string, any> = $state({})
+    let roleAssignments: Record<string, UserRoleAssignmentResponse | null> = $state({})
+    let roleExpirationInputs: Record<string, string> = $state({})
 
     const initPromise = init()
 
@@ -27,8 +28,8 @@
         user.credentialPolicy ??= {}
 
         allRoles = await api.getRoles()
-        const allowedRoles = await api.getUserRoles(user)
-        roleIsAllowed = Object.fromEntries(allowedRoles.map(r => [r.id, true]))
+        const assignments = await api.getUserRoles(user)
+        roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
     }
 
     async function update () {
@@ -50,19 +51,47 @@
     }
 
     async function toggleRole (role: Role) {
-        if (roleIsAllowed[role.id]) {
+        if (roleAssignments[role.id]) {
             await api.deleteUserRole({
                 id: user!.id,
                 roleId: role.id,
             })
-            roleIsAllowed = { ...roleIsAllowed, [role.id]: false }
+            roleAssignments = { ...roleAssignments, [role.id]: null }
         } else {
+            const expiresAtInput = roleExpirationInputs[role.id]
+            const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
             await api.addUserRole({
                 id: user!.id,
                 roleId: role.id,
+                userRoleAssignmentRequest: { expiresAt },
             })
-            roleIsAllowed = { ...roleIsAllowed, [role.id]: true }
+            // Refetch to get the full assignment info
+            const assignments = await api.getUserRoles(user!)
+            roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
         }
+    }
+
+    async function updateRoleExpiration (role: Role) {
+        const expiresAtInput = roleExpirationInputs[role.id]
+        const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
+        await api.updateUserRole({
+            id: user!.id,
+            roleId: role.id,
+            userRoleAssignmentRequest: { expiresAt },
+        })
+        // Refetch to get updated assignment
+        const assignments = await api.getUserRoles(user!)
+        roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
+    }
+
+    function formatExpirationDate (date: Date | null | undefined): string {
+        if (!date) return ''
+        return date.toLocaleString()
+    }
+
+    function toInputDatetime (date: Date | null | undefined): string {
+        if (!date) return ''
+        return date.toISOString().slice(0, 16)
     }
 </script>
 
@@ -93,23 +122,53 @@
     <h4 class="mt-4">User roles</h4>
     <div class="list-group list-group-flush mb-3">
         {#each allRoles as role (role.id)}
-            <label
-                for="role-{role.id}"
-                class="list-group-item list-group-item-action d-flex align-items-center"
-            >
-                <Input
-                    id="role-{role.id}"
-                    class="mb-0 me-2"
-                    type="switch"
-                    on:change={() => toggleRole(role)}
-                    checked={roleIsAllowed[role.id]} />
-                <div>
-                    <div>{role.name}</div>
-                    {#if role.description}
-                        <small class="text-muted">{role.description}</small>
-                    {/if}
+            {@const assignment = roleAssignments[role.id]}
+            <div class="list-group-item">
+                <div class="d-flex align-items-center">
+                    <Input
+                        id="role-{role.id}"
+                        class="mb-0 me-2"
+                        type="switch"
+                        on:change={() => toggleRole(role)}
+                        checked={!!assignment} />
+                    <label for="role-{role.id}" class="flex-grow-1 mb-0">
+                        <div class="d-flex align-items-center">
+                            <span>{role.name}</span>
+                            {#if assignment}
+                                {#if assignment.isExpired}
+                                    <Badge color="danger" class="ms-2">Expired</Badge>
+                                {:else if assignment.expiresAt}
+                                    <Badge color="warning" class="ms-2">Expires: {formatExpirationDate(assignment.expiresAt)}</Badge>
+                                {:else}
+                                    <Badge color="secondary" class="ms-2">Permanent</Badge>
+                                {/if}
+                            {/if}
+                        </div>
+                        {#if role.description}
+                            <small class="text-muted">{role.description}</small>
+                        {/if}
+                    </label>
                 </div>
-            </label>
+                {#if assignment}
+                    <div class="mt-2 d-flex align-items-center">
+                        <Input
+                            type="datetime-local"
+                            class="me-2"
+                            style="max-width: 250px;"
+                            value={toInputDatetime(assignment.expiresAt)}
+                            on:change={(e) => {
+                                roleExpirationInputs[role.id] = e.currentTarget.value
+                            }}
+                            placeholder="Expiration (optional)"
+                        />
+                        <AsyncButton
+                            color="secondary"
+                            class="btn-sm"
+                            click={() => updateRoleExpiration(role)}
+                        >Update expiration</AsyncButton>
+                    </div>
+                {/if}
+            </div>
         {/each}
     </div>
 

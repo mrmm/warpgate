@@ -76,10 +76,23 @@
     {/if}
 </div>
 
-<div class="d-flex">
+<div class="d-flex mb-3">
     <Input
         class="mb-0 me-2"
         type="switch"
         label="Allow insecure SSH algorithms (e.g. for older network devices)"
         bind:checked={options.allowInsecureAlgos} />
 </div>
+
+<h4 class="mt-4">File Transfer</h4>
+
+<div class="d-flex">
+    <Input
+        class="mb-0 me-2"
+        type="switch"
+        label="Allow file transfer (SFTP/SCP)"
+        bind:checked={options.allowSftp} />
+</div>
+<small class="text-muted d-block mt-1">
+    When disabled, SFTP and SCP connections will be rejected. Individual roles can override this setting.
+</small>

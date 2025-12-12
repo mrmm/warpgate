@@ -57,6 +57,16 @@ pub trait ConfigProvider {
         target: &str,
     ) -> Result<bool, WarpgateError>;
 
+    /// Check if file transfer (SFTP/SCP) is allowed for a user to access a target.
+    /// Returns true if allowed, false if denied.
+    /// Takes into account the target's `allow_sftp` setting and any role-level overrides.
+    async fn authorize_file_transfer(
+        &mut self,
+        username: &str,
+        target: &str,
+        target_allows_sftp: bool,
+    ) -> Result<bool, WarpgateError>;
+
     async fn update_public_key_last_used(
         &self,
         credential: Option<AuthCredential>,

@@ -18,6 +18,10 @@ pub struct TargetSSHOptions {
     pub allow_insecure_algos: Option<bool>,
     #[serde(default)]
     pub auth: SSHTargetAuth,
+    /// Whether to allow SFTP/SCP file transfer for this target.
+    /// Defaults to true. Can be overridden at role-target level.
+    #[serde(default = "_default_true")]
+    pub allow_sftp: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Union)]

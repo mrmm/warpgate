@@ -12,6 +12,8 @@ pub enum SshClientError {
     Warpgate(#[from] WarpgateError),
     #[error(transparent)]
     Other(Box<dyn Error + Send + Sync>),
+    #[error("file transfer denied")]
+    FileTransferDenied,
 }
 
 impl SshClientError {

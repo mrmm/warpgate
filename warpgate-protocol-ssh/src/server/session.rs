@@ -1141,6 +1141,35 @@ impl ServerSession {
             }
             Ok::<&str, _>(command) => {
                 debug!(channel=%channel_id, %command, "Requested exec");
+
+                // Check file transfer permissions for SCP commands
+                // SCP uses exec with commands like "scp -t filename" or "scp -f filename"
+                if command.starts_with("scp ") {
+                    if let (TargetSelection::Found(target, ssh_opts), Some(username)) =
+                        (&self.target, &self.username)
+                    {
+                        let allowed = self
+                            .services
+                            .config_provider
+                            .lock()
+                            .await
+                            .authorize_file_transfer(username, &target.name, ssh_opts.allow_sftp)
+                            .await
+                            .unwrap_or(false);
+
+                        if !allowed {
+                            warn!(
+                                channel=%channel_id,
+                                username,
+                                target=%target.name,
+                                %command,
+                                "SCP command denied - file transfer not allowed"
+                            );
+                            return Err(SshClientError::FileTransferDenied.into());
+                        }
+                    }
+                }
+
                 let _ = self.maybe_connect_remote().await;
                 let _ = self.send_command(RCCommand::Channel(
                     channel_id,
@@ -1246,6 +1275,33 @@ impl ServerSession {
     ) -> Result<(), SshClientError> {
         let channel_id = self.map_channel(&server_channel_id)?;
         info!(channel=%channel_id, "Requesting subsystem {}", &name);
+
+        // Check file transfer permissions for SFTP subsystem
+        if name == "sftp" {
+            if let (TargetSelection::Found(target, ssh_opts), Some(username)) =
+                (&self.target, &self.username)
+            {
+                let allowed = self
+                    .services
+                    .config_provider
+                    .lock()
+                    .await
+                    .authorize_file_transfer(username, &target.name, ssh_opts.allow_sftp)
+                    .await
+                    .unwrap_or(false);
+
+                if !allowed {
+                    warn!(
+                        channel=%channel_id,
+                        username,
+                        target=%target.name,
+                        "SFTP subsystem denied - file transfer not allowed"
+                    );
+                    return Err(SshClientError::FileTransferDenied);
+                }
+            }
+        }
+
         let _ = self.maybe_connect_remote().await;
         self.send_command_and_wait(RCCommand::Channel(
             channel_id,

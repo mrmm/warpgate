@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { api, BootstrapThemeColor, type TargetGroup } from 'admin/lib/api'
+    import { api, BootstrapThemeColor, type TargetGroup, type Role } from 'admin/lib/api'
     import { Button, FormGroup, Input, Label, Alert } from '@sveltestrap/sveltestrap'
     import { stringifyError } from 'common/errors'
     import { VALID_CHOICES } from './common'
     import GroupColorCircle from 'common/GroupColorCircle.svelte'
     import AsyncButton from 'common/AsyncButton.svelte'
     import Loadable from 'common/Loadable.svelte'
+    import { replace } from 'svelte-spa-router'
 
     interface Props {
         params: { id: string };
@@ -22,6 +23,9 @@
     let description = $state('')
     let color = $state<BootstrapThemeColor | ''>('')
 
+    let allRoles: Role[] = $state([])
+    let roleIsAllowed: Record<string, boolean> = $state({})
+
     const initPromise = init()
 
     async function init () {
@@ -34,6 +38,13 @@
             error = await stringifyError(e)
             throw e
         }
+    }
+
+    async function loadRoles () {
+        allRoles = await api.getRoles()
+        const groupRoles = await api.getTargetGroupRoles({ id: groupId })
+        roleIsAllowed = Object.fromEntries(groupRoles.map(r => [r.id, true]))
+        return allRoles
     }
 
     async function update () {
@@ -73,6 +84,22 @@
         } catch (e) {
             error = await stringifyError(e)
             throw e
+        }
+    }
+
+    async function toggleRole (role: Role) {
+        if (roleIsAllowed[role.id]) {
+            await api.deleteTargetGroupRole({
+                id: groupId,
+                roleId: role.id,
+            })
+            roleIsAllowed = { ...roleIsAllowed, [role.id]: false }
+        } else {
+            await api.addTargetGroupRole({
+                id: groupId,
+                roleId: role.id,
+            })
+            roleIsAllowed = { ...roleIsAllowed, [role.id]: true }
         }
     }
 </script>
@@ -145,6 +172,34 @@
                 <Button color="danger" onclick={remove}>Remove</Button>
             </div>
         </form>
+
+        <h4 class="mt-5">Roles with access to all targets in this group</h4>
+        <p class="text-muted">Roles assigned here will have access to all targets in this group.</p>
+        <Loadable promise={loadRoles()}>
+            {#snippet children(roles)}
+                <div class="list-group list-group-flush mb-3">
+                    {#each roles as role (role.id)}
+                        <label
+                            for="group-role-{role.id}"
+                            class="list-group-item list-group-item-action d-flex align-items-center"
+                        >
+                            <Input
+                                id="group-role-{role.id}"
+                                class="mb-0 me-2"
+                                type="switch"
+                                on:change={() => toggleRole(role)}
+                                checked={roleIsAllowed[role.id]} />
+                            <div>
+                                <div>{role.name}</div>
+                                {#if role.description}
+                                    <small class="text-muted">{role.description}</small>
+                                {/if}
+                            </div>
+                        </label>
+                    {/each}
+                </div>
+            {/snippet}
+        </Loadable>
     </div>
 {/if}
 </Loadable>
