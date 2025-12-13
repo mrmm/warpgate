@@ -1170,6 +1170,17 @@ impl ServerSession {
                                 reason=%reason,
                                 "SCP command denied - file transfer not allowed"
                             );
+                            // Send error message to client's stderr before denying
+                            let error_msg = format!("warpgate: file transfer denied: {}\r\n", reason);
+                            if let Some(session) = self.session_handle.clone() {
+                                self.channel_writer.write_extended(
+                                    session,
+                                    server_channel_id.0,
+                                    1, // stderr
+                                    CryptoVec::from_slice(error_msg.as_bytes()),
+                                );
+                                let _ = self.channel_writer.flush().await;
+                            }
                             return Err(SshClientError::FileTransferDenied(reason).into());
                         }
                     }
@@ -1307,6 +1318,17 @@ impl ServerSession {
                         reason=%reason,
                         "SFTP subsystem denied - file transfer not allowed"
                     );
+                    // Send error message to client's stderr before denying
+                    let error_msg = format!("warpgate: file transfer denied: {}\r\n", reason);
+                    if let Some(session) = self.session_handle.clone() {
+                        self.channel_writer.write_extended(
+                            session,
+                            server_channel_id.0,
+                            1, // stderr
+                            CryptoVec::from_slice(error_msg.as_bytes()),
+                        );
+                        let _ = self.channel_writer.flush().await;
+                    }
                     return Err(SshClientError::FileTransferDenied(reason));
                 }
             }
