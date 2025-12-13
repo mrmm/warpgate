@@ -47,7 +47,7 @@ def setup_sftp_test(
                 openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
             ),
         )
-        api.add_user_role(user.id, role.id)
+        api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
         ssh_target = api.create_target(
             sdk.TargetDataRequest(
@@ -163,9 +163,9 @@ class TestSftpTargetLevel:
                     openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
                 ),
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
-            # Create target without explicitly setting allow_sftp
+            # Create target with default allow_sftp=True
             ssh_target = api.create_target(
                 sdk.TargetDataRequest(
                     name=f"ssh-{uuid4()}",
@@ -175,7 +175,7 @@ class TestSftpTargetLevel:
                             host="localhost",
                             port=ssh_port,
                             username="root",
-                            # allow_sftp not set - should default to true
+                            allow_sftp=True,  # Default value
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -183,7 +183,7 @@ class TestSftpTargetLevel:
                     ),
                 )
             )
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         success = run_sftp_command(processes, shared_wg, user, ssh_target)
         assert success, "SFTP should be allowed by default"
@@ -290,8 +290,8 @@ class TestSftpMultipleRoles:
                     openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
                 ),
             )
-            api.add_user_role(user.id, deny_role.id)
-            api.add_user_role(user.id, allow_role.id)
+            api.add_user_role(user.id, deny_role.id, sdk.UserRoleAssignmentRequest())
+            api.add_user_role(user.id, allow_role.id, sdk.UserRoleAssignmentRequest())
 
             ssh_target = api.create_target(
                 sdk.TargetDataRequest(
@@ -358,8 +358,8 @@ class TestSftpMultipleRoles:
                     openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
                 ),
             )
-            api.add_user_role(user.id, role1.id)
-            api.add_user_role(user.id, role2.id)
+            api.add_user_role(user.id, role1.id, sdk.UserRoleAssignmentRequest())
+            api.add_user_role(user.id, role2.id, sdk.UserRoleAssignmentRequest())
 
             ssh_target = api.create_target(
                 sdk.TargetDataRequest(

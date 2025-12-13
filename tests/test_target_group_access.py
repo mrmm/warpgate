@@ -59,7 +59,7 @@ class TestTargetGroupAccess:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
             # Create target IN the group
             ssh_target = api.create_target(
@@ -72,6 +72,7 @@ class TestTargetGroupAccess:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -125,7 +126,7 @@ class TestTargetGroupAccess:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
             # Create target NOT in the group
             ssh_target = api.create_target(
@@ -137,6 +138,7 @@ class TestTargetGroupAccess:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -213,7 +215,7 @@ class TestTargetGroupAccess:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
             # Create target IN the group
             ssh_target = api.create_target(
@@ -226,6 +228,7 @@ class TestTargetGroupAccess:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -236,7 +239,7 @@ class TestTargetGroupAccess:
 
             # Add BOTH group-level and direct role access
             api.add_target_group_role(group.id, role.id)
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
             # Remove target from group
             api.update_target(

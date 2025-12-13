@@ -11,6 +11,7 @@ Tests:
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import subprocess
+import time
 import pytest
 
 from .api_client import admin_client, sdk
@@ -64,6 +65,7 @@ def setup_user_role_target(
                         host="localhost",
                         port=ssh_port,
                         username="root",
+                        allow_sftp=True,
                         auth=sdk.SSHTargetAuth(
                             sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                         ),
@@ -71,7 +73,7 @@ def setup_user_role_target(
                 ),
             )
         )
-        api.add_target_role(ssh_target.id, role.id)
+        api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
         return user, ssh_target, role
 
 
@@ -84,13 +86,16 @@ class TestUserRoleTTL:
         shared_wg: WarpgateProcess,
     ):
         """User with expired role assignment cannot access targets."""
-        # Set expiration to 1 second ago
-        expired_time = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        # Set expiration to 2 seconds from now, then wait for it to expire
+        short_expiry = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
 
         user, ssh_target, role = setup_user_role_target(
             processes, shared_wg, wg_c_ed25519_pubkey,
-            expires_at=expired_time,
+            expires_at=short_expiry,
         )
+
+        # Wait for the role to expire
+        time.sleep(3)
 
         ssh_client = processes.start_ssh_client(
             f"{user.username}:{ssh_target.name}@localhost",
@@ -224,7 +229,7 @@ class TestUserRoleTTL:
             user = api.create_user(sdk.CreateUserRequest(username=f"user-{uuid4()}"))
 
             # Add role without expiration
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
             # Update with expiration
             new_expiry = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()

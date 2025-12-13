@@ -10,6 +10,7 @@ Tests:
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import subprocess
+import time
 import pytest
 
 from .api_client import admin_client, sdk
@@ -48,7 +49,7 @@ def setup_user_with_target_role_ttl(
         )
 
         # Add user role (permanent)
-        api.add_user_role(user.id, role.id)
+        api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
 
         ssh_target = api.create_target(
             sdk.TargetDataRequest(
@@ -59,6 +60,7 @@ def setup_user_with_target_role_ttl(
                         host="localhost",
                         port=ssh_port,
                         username="root",
+                        allow_sftp=True,
                         auth=sdk.SSHTargetAuth(
                             sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                         ),
@@ -86,13 +88,16 @@ class TestRoleTargetTTL:
         shared_wg: WarpgateProcess,
     ):
         """Target with expired role-target assignment denies access."""
-        # Set target-role expiration to 1 second ago
-        expired_time = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        # Set target-role expiration to 2 seconds from now, then wait for it to expire
+        short_expiry = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
 
         user, ssh_target, role = setup_user_with_target_role_ttl(
             processes, shared_wg, wg_c_ed25519_pubkey,
-            target_role_expires_at=expired_time,
+            target_role_expires_at=short_expiry,
         )
+
+        # Wait for the target-role to expire
+        time.sleep(3)
 
         ssh_client = processes.start_ssh_client(
             f"{user.username}:{ssh_target.name}@localhost",
@@ -154,8 +159,8 @@ class TestRoleTargetTTL:
         url = f"https://localhost:{shared_wg.http_port}"
         with admin_client(url) as api:
             # Create two roles
-            expired_role = api.create_role(
-                sdk.RoleDataRequest(name=f"expired-role-{uuid4()}"),
+            expiring_role = api.create_role(
+                sdk.RoleDataRequest(name=f"expiring-role-{uuid4()}"),
             )
             valid_role = api.create_role(
                 sdk.RoleDataRequest(name=f"valid-role-{uuid4()}"),
@@ -167,8 +172,8 @@ class TestRoleTargetTTL:
             )
 
             # Assign both roles to user (permanent user-role)
-            api.add_user_role(user.id, expired_role.id)
-            api.add_user_role(user.id, valid_role.id)
+            api.add_user_role(user.id, expiring_role.id, sdk.UserRoleAssignmentRequest())
+            api.add_user_role(user.id, valid_role.id, sdk.UserRoleAssignmentRequest())
 
             ssh_target = api.create_target(
                 sdk.TargetDataRequest(
@@ -179,6 +184,7 @@ class TestRoleTargetTTL:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -187,18 +193,21 @@ class TestRoleTargetTTL:
                 )
             )
 
-            # Add expired target-role assignment
-            expired_time = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+            # Add short-lived target-role assignment that will expire
+            short_expiry = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
             api.add_target_role(
                 ssh_target.id,
-                expired_role.id,
-                sdk.TargetRoleAssignmentRequest(expires_at=expired_time),
+                expiring_role.id,
+                sdk.TargetRoleAssignmentRequest(expires_at=short_expiry),
             )
 
             # Add valid (permanent) target-role assignment
-            api.add_target_role(ssh_target.id, valid_role.id)
+            api.add_target_role(ssh_target.id, valid_role.id, sdk.TargetRoleAssignmentRequest())
 
-        # User should be able to access via the valid role
+        # Wait for the expiring role to expire
+        time.sleep(3)
+
+        # User should still be able to access via the valid role
         ssh_client = processes.start_ssh_client(
             f"{user.username}:{ssh_target.name}@localhost",
             "-p",
@@ -232,6 +241,7 @@ class TestRoleTargetTTL:
                             host="localhost",
                             port=22,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -272,6 +282,7 @@ class TestRoleTargetTTL:
                             host="localhost",
                             port=22,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                             ),
@@ -281,7 +292,7 @@ class TestRoleTargetTTL:
             )
 
             # Add role without expiration
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
             # Update with expiration
             new_expiry = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
