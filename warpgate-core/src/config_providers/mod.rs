@@ -13,6 +13,15 @@ use warpgate_common::{Secret, Target, User, WarpgateError};
 use warpgate_db_entities as e;
 use warpgate_sso::SsoProviderConfig;
 
+/// Result of file transfer authorization check
+#[derive(Debug, Clone)]
+pub struct FileTransferAuthResult {
+    /// Whether file transfer is allowed
+    pub allowed: bool,
+    /// Reason for denial (if not allowed)
+    pub denial_reason: Option<String>,
+}
+
 #[enum_dispatch]
 pub enum ConfigProviderEnum {
     Database(DatabaseConfigProvider),
@@ -58,14 +67,14 @@ pub trait ConfigProvider {
     ) -> Result<bool, WarpgateError>;
 
     /// Check if file transfer (SFTP/SCP) is allowed for a user to access a target.
-    /// Returns true if allowed, false if denied.
+    /// Returns FileTransferAuthResult with allowed status and denial reason if applicable.
     /// Takes into account the target's `allow_sftp` setting and any role-level overrides.
     async fn authorize_file_transfer(
         &mut self,
         username: &str,
         target: &str,
         target_allows_sftp: bool,
-    ) -> Result<bool, WarpgateError>;
+    ) -> Result<FileTransferAuthResult, WarpgateError>;
 
     async fn update_public_key_last_used(
         &self,

@@ -440,7 +440,7 @@ impl ConfigProvider for DatabaseConfigProvider {
         username: &str,
         target_name: &str,
         target_allows_sftp: bool,
-    ) -> Result<bool, WarpgateError> {
+    ) -> Result<super::FileTransferAuthResult, WarpgateError> {
         let db = self.db.lock().await;
         let now = Utc::now();
 
@@ -456,12 +456,18 @@ impl ConfigProvider for DatabaseConfigProvider {
 
         let Some(user_model) = user_model else {
             error!("User not found for file transfer check: {}", username);
-            return Ok(false);
+            return Ok(super::FileTransferAuthResult {
+                allowed: false,
+                denial_reason: Some("user not found".to_string()),
+            });
         };
 
         let Some(target_model) = target_model else {
             warn!("Target not found for file transfer check: {}", target_name);
-            return Ok(false);
+            return Ok(super::FileTransferAuthResult {
+                allowed: false,
+                denial_reason: Some("target not found".to_string()),
+            });
         };
 
         // Get user's valid (non-expired) role assignments
@@ -489,7 +495,10 @@ impl ConfigProvider for DatabaseConfigProvider {
         }
 
         if valid_user_role_ids.is_empty() {
-            return Ok(false);
+            return Ok(super::FileTransferAuthResult {
+                allowed: false,
+                denial_reason: Some("no valid role assignments".to_string()),
+            });
         }
 
         // User-role level deny takes highest priority
@@ -499,7 +508,10 @@ impl ConfigProvider for DatabaseConfigProvider {
                 target = target_name,
                 "File transfer denied by user-role assignment"
             );
-            return Ok(false);
+            return Ok(super::FileTransferAuthResult {
+                allowed: false,
+                denial_reason: Some("denied by user-role assignment (SFTP disabled for user's role)".to_string()),
+            });
         }
 
         // Get target role assignments for this target and user's roles
@@ -534,7 +546,10 @@ impl ConfigProvider for DatabaseConfigProvider {
                 target = target_name,
                 "File transfer denied by target-role assignment"
             );
-            return Ok(false);
+            return Ok(super::FileTransferAuthResult {
+                allowed: false,
+                denial_reason: Some("denied by target-role assignment (SFTP disabled for role on this target)".to_string()),
+            });
         }
 
         // User-role level allow (takes precedence over target default)
@@ -544,7 +559,10 @@ impl ConfigProvider for DatabaseConfigProvider {
                 target = target_name,
                 "File transfer allowed by user-role assignment"
             );
-            return Ok(true);
+            return Ok(super::FileTransferAuthResult {
+                allowed: true,
+                denial_reason: None,
+            });
         }
 
         // Target-role level allow
@@ -554,7 +572,10 @@ impl ConfigProvider for DatabaseConfigProvider {
                 target = target_name,
                 "File transfer allowed by target-role assignment"
             );
-            return Ok(true);
+            return Ok(super::FileTransferAuthResult {
+                allowed: true,
+                denial_reason: None,
+            });
         }
 
         // Fall back to target default
@@ -564,7 +585,17 @@ impl ConfigProvider for DatabaseConfigProvider {
             target_allows_sftp,
             "File transfer using target default"
         );
-        Ok(target_allows_sftp)
+        if target_allows_sftp {
+            Ok(super::FileTransferAuthResult {
+                allowed: true,
+                denial_reason: None,
+            })
+        } else {
+            Ok(super::FileTransferAuthResult {
+                allowed: false,
+                denial_reason: Some("SFTP/SCP is disabled for this target".to_string()),
+            })
+        }
     }
 
     async fn apply_sso_role_mappings(

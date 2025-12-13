@@ -1148,24 +1148,29 @@ impl ServerSession {
                     if let (TargetSelection::Found(target, ssh_opts), Some(username)) =
                         (&self.target, &self.username)
                     {
-                        let allowed = self
+                        let auth_result = self
                             .services
                             .config_provider
                             .lock()
                             .await
                             .authorize_file_transfer(username, &target.name, ssh_opts.allow_sftp)
                             .await
-                            .unwrap_or(false);
+                            .unwrap_or_else(|_| warpgate_core::FileTransferAuthResult {
+                                allowed: false,
+                                denial_reason: Some("authorization check failed".to_string()),
+                            });
 
-                        if !allowed {
+                        if !auth_result.allowed {
+                            let reason = auth_result.denial_reason.unwrap_or_else(|| "unknown reason".to_string());
                             warn!(
                                 channel=%channel_id,
                                 username,
                                 target=%target.name,
                                 %command,
+                                reason=%reason,
                                 "SCP command denied - file transfer not allowed"
                             );
-                            return Err(SshClientError::FileTransferDenied.into());
+                            return Err(SshClientError::FileTransferDenied(reason).into());
                         }
                     }
                 }
@@ -1281,23 +1286,28 @@ impl ServerSession {
             if let (TargetSelection::Found(target, ssh_opts), Some(username)) =
                 (&self.target, &self.username)
             {
-                let allowed = self
+                let auth_result = self
                     .services
                     .config_provider
                     .lock()
                     .await
                     .authorize_file_transfer(username, &target.name, ssh_opts.allow_sftp)
                     .await
-                    .unwrap_or(false);
+                    .unwrap_or_else(|_| warpgate_core::FileTransferAuthResult {
+                        allowed: false,
+                        denial_reason: Some("authorization check failed".to_string()),
+                    });
 
-                if !allowed {
+                if !auth_result.allowed {
+                    let reason = auth_result.denial_reason.unwrap_or_else(|| "unknown reason".to_string());
                     warn!(
                         channel=%channel_id,
                         username,
                         target=%target.name,
+                        reason=%reason,
                         "SFTP subsystem denied - file transfer not allowed"
                     );
-                    return Err(SshClientError::FileTransferDenied);
+                    return Err(SshClientError::FileTransferDenied(reason));
                 }
             }
         }
