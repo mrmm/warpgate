@@ -53,39 +53,49 @@
     }
 
     async function toggleRole (role: Role) {
-        if (roleAssignments[role.id]) {
-            await api.deleteUserRole({
-                id: user!.id,
-                roleId: role.id,
-            })
-            roleAssignments = { ...roleAssignments, [role.id]: null }
-        } else {
-            const expiresAtInput = roleExpirationInputs[role.id]
-            const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
-            const allowFileTransfer = roleFileTransferInputs[role.id] || undefined
-            await api.addUserRole({
-                id: user!.id,
-                roleId: role.id,
-                userRoleAssignmentRequest: { expiresAt, allowFileTransfer },
-            })
-            // Refetch to get the full assignment info
-            const assignments = await api.getUserRoles(user!)
-            roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
+        error = null
+        try {
+            if (roleAssignments[role.id]) {
+                await api.deleteUserRole({
+                    id: user!.id,
+                    roleId: role.id,
+                })
+                roleAssignments = { ...roleAssignments, [role.id]: null }
+            } else {
+                const expiresAtInput = roleExpirationInputs[role.id]
+                const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
+                const allowFileTransfer = roleFileTransferInputs[role.id] || undefined
+                await api.addUserRole({
+                    id: user!.id,
+                    roleId: role.id,
+                    userRoleAssignmentRequest: { expiresAt, allowFileTransfer },
+                })
+                // Refetch to get the full assignment info
+                const assignments = await api.getUserRoles(user!)
+                roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
+            }
+        } catch (err) {
+            error = await stringifyError(err)
         }
     }
 
     async function updateRoleAssignment (role: Role) {
-        const expiresAtInput = roleExpirationInputs[role.id]
-        const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
-        const allowFileTransfer = roleFileTransferInputs[role.id] || undefined
-        await api.updateUserRole({
-            id: user!.id,
-            roleId: role.id,
-            userRoleAssignmentRequest: { expiresAt, allowFileTransfer },
-        })
-        // Refetch to get updated assignment
-        const assignments = await api.getUserRoles(user!)
-        roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
+        error = null
+        try {
+            const expiresAtInput = roleExpirationInputs[role.id]
+            const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
+            const allowFileTransfer = roleFileTransferInputs[role.id] || undefined
+            await api.updateUserRole({
+                id: user!.id,
+                roleId: role.id,
+                userRoleAssignmentRequest: { expiresAt, allowFileTransfer },
+            })
+            // Refetch to get updated assignment
+            const assignments = await api.getUserRoles(user!)
+            roleAssignments = Object.fromEntries(assignments.map(a => [a.role.id, a]))
+        } catch (err) {
+            error = await stringifyError(err)
+        }
     }
 
     function formatExpirationDate (date: Date | null | undefined): string {

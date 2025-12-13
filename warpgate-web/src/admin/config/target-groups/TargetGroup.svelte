@@ -88,18 +88,23 @@
     }
 
     async function toggleRole (role: Role) {
-        if (roleIsAllowed[role.id]) {
-            await api.deleteTargetGroupRole({
-                id: groupId,
-                roleId: role.id,
-            })
-            roleIsAllowed = { ...roleIsAllowed, [role.id]: false }
-        } else {
-            await api.addTargetGroupRole({
-                id: groupId,
-                roleId: role.id,
-            })
-            roleIsAllowed = { ...roleIsAllowed, [role.id]: true }
+        error = undefined
+        try {
+            if (roleIsAllowed[role.id]) {
+                await api.deleteTargetGroupRole({
+                    id: groupId,
+                    roleId: role.id,
+                })
+                roleIsAllowed = { ...roleIsAllowed, [role.id]: false }
+            } else {
+                await api.addTargetGroupRole({
+                    id: groupId,
+                    roleId: role.id,
+                })
+                roleIsAllowed = { ...roleIsAllowed, [role.id]: true }
+            }
+        } catch (err) {
+            error = await stringifyError(err)
         }
     }
 </script>
