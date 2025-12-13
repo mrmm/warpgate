@@ -128,12 +128,13 @@ async fn _handle_connection(
 
     tokio::task::Builder::new()
         .name(&format!("SSH {id} protocol"))
-        .spawn(_run_stream(russh_config, wrapped_stream, handler))?;
+        .spawn(_run_stream(id, russh_config, wrapped_stream, handler))?;
 
     Ok(())
 }
 
 async fn _run_stream<R>(
+    session_id: warpgate_common::SessionId,
     config: Arc<russh::server::Config>,
     socket: R,
     handler: ServerHandler,
@@ -149,7 +150,7 @@ where
     .await;
 
     if let Err(ref error) = ret {
-        error!(%error, "Session failed");
+        error!(session=%session_id, %error, "Session failed");
     }
 
     ret

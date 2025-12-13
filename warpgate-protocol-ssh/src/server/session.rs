@@ -290,6 +290,14 @@ impl ServerSession {
         }
     }
 
+    fn target_name(&self) -> Option<&str> {
+        match &self.target {
+            TargetSelection::Found(target, _) => Some(&target.name),
+            TargetSelection::NotFound(name) => Some(name),
+            TargetSelection::None => None,
+        }
+    }
+
     fn map_channel(&self, ch: &ServerChannelId) -> Result<Uuid, WarpgateError> {
         self.channel_map
             .get_by_left(ch)
@@ -388,21 +396,33 @@ impl ServerSession {
                     debug!(event=?e, "Event");
                     let span = self.make_logging_span();
                     if let Err(err) = self.handle_remote_event(e).instrument(span).await {
-                        error!("Client event handler error: {:?}", err);
+                        error!(
+                            target = self.target_name().unwrap_or("-"),
+                            error = %err,
+                            "Client event handler error"
+                        );
                         // break;
                     }
                 }
                 Event::ServerHandler(e) => {
                     let span = self.make_logging_span();
                     if let Err(err) = self.handle_server_handler_event(e).instrument(span).await {
-                        error!("Server event handler error: {:?}", err);
+                        error!(
+                            target = self.target_name().unwrap_or("-"),
+                            error = %err,
+                            "Server event handler error"
+                        );
                         // break;
                     }
                 }
                 Event::Command(command) => {
                     debug!(?command, "Session control");
                     if let Err(err) = self.handle_session_control(command).await {
-                        error!("Command handler error: {:?}", err);
+                        error!(
+                            target = self.target_name().unwrap_or("-"),
+                            error = %err,
+                            "Session control error"
+                        );
                         // break;
                     }
                 }
