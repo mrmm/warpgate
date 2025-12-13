@@ -19,7 +19,7 @@ class TestHTTPUserAuthPassword:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             echo_target = api.create_target(
                 sdk.TargetDataRequest(
                     name=f"echo-{uuid4()}",
@@ -35,7 +35,7 @@ class TestHTTPUserAuthPassword:
                     ),
                 )
             )
-            api.add_target_role(echo_target.id, role.id)
+            api.add_target_role(echo_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         session = requests.Session()
         session.verify = False
@@ -73,7 +73,7 @@ class TestHTTPUserAuthPassword:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             echo_target = api.create_target(
                 sdk.TargetDataRequest(
                     name=f"echo-{uuid4()}",
@@ -89,7 +89,7 @@ class TestHTTPUserAuthPassword:
                     ),
                 )
             )
-            api.add_target_role(echo_target.id, role.id)
+            api.add_target_role(echo_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         session = requests.Session()
         session.verify = False

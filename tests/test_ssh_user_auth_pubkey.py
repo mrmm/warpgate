@@ -33,7 +33,7 @@ class Test:
                     openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip()
                 ),
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             ssh_target = api.create_target(
                 sdk.TargetDataRequest(
                     name=f"ssh-{uuid4()}",
@@ -43,6 +43,7 @@ class Test:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(
                                     kind="PublicKey"
@@ -52,7 +53,7 @@ class Test:
                     ),
                 )
             )
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         ssh_client = processes.start_ssh_client(
             f"{user.username}:{ssh_target.name}@localhost",
@@ -109,7 +110,7 @@ class Test:
                     openssh_public_key=open("ssh-keys/id_rsa.pub").read().strip()
                 ),
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             ssh_target = api.create_target(sdk.TargetDataRequest(
                 name=f"ssh-{uuid4()}",
                 options=sdk.TargetOptions(
@@ -118,13 +119,14 @@ class Test:
                         host="localhost",
                         port=ssh_port,
                         username="root",
+                        allow_sftp=True,
                         auth=sdk.SSHTargetAuth(
                             sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                         ),
                     )
                 ),
             ))
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         ssh_client = processes.start_ssh_client(
             f"{user.username}:{ssh_target.name}@localhost",

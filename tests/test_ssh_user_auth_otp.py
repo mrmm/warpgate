@@ -55,7 +55,7 @@ class Test:
                     ),
                 ),
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             ssh_target = api.create_target(
                 sdk.TargetDataRequest(
                     name=f"ssh-{uuid4()}",
@@ -65,6 +65,7 @@ class Test:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(
                                     kind="PublicKey"
@@ -74,7 +75,7 @@ class Test:
                     ),
                 )
             )
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         totp = pyotp.TOTP(otp_key_base32)
 

@@ -32,6 +32,7 @@ class Test:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(
                                     kind="PublicKey"
@@ -68,6 +69,7 @@ class Test:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(
                                     kind="PublicKey"

@@ -46,7 +46,7 @@ class Test:
                         openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip()
                     ),
                 )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             api.update_user(
                 user.id,
                 sdk.UserDataRequest(
@@ -68,6 +68,7 @@ class Test:
                             host="localhost",
                             port=ssh_port,
                             username="root",
+                            allow_sftp=True,
                             auth=sdk.SSHTargetAuth(
                                 sdk.SSHTargetAuthSshTargetPublicKeyAuth(
                                     kind="PublicKey"
@@ -77,7 +78,7 @@ class Test:
                     ),
                 )
             )
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         session = aiohttp.ClientSession()
         headers = {"Host": f"localhost:{shared_wg.http_port}"}

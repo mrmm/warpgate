@@ -22,7 +22,7 @@ class Test:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             target = api.create_target(
                 sdk.TargetDataRequest(
                     name=f"echo-{uuid4()}",
@@ -38,7 +38,7 @@ class Test:
                     ),
                 )
             )
-            api.add_target_role(target.id, role.id)
+            api.add_target_role(target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         session = requests.Session()
         session.verify = False
