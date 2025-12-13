@@ -21,6 +21,7 @@
     let allRoles: Role[] = $state([])
     let roleAssignments: Record<string, UserRoleAssignmentResponse | null> = $state({})
     let roleExpirationInputs: Record<string, string> = $state({})
+    let roleFileTransferInputs: Record<string, string | undefined> = $state({})
 
     const initPromise = init()
 
@@ -61,10 +62,11 @@
         } else {
             const expiresAtInput = roleExpirationInputs[role.id]
             const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
+            const allowFileTransfer = roleFileTransferInputs[role.id] || undefined
             await api.addUserRole({
                 id: user!.id,
                 roleId: role.id,
-                userRoleAssignmentRequest: { expiresAt },
+                userRoleAssignmentRequest: { expiresAt, allowFileTransfer },
             })
             // Refetch to get the full assignment info
             const assignments = await api.getUserRoles(user!)
@@ -72,13 +74,14 @@
         }
     }
 
-    async function updateRoleExpiration (role: Role) {
+    async function updateRoleAssignment (role: Role) {
         const expiresAtInput = roleExpirationInputs[role.id]
         const expiresAt = expiresAtInput ? new Date(expiresAtInput) : undefined
+        const allowFileTransfer = roleFileTransferInputs[role.id] || undefined
         await api.updateUserRole({
             id: user!.id,
             roleId: role.id,
-            userRoleAssignmentRequest: { expiresAt },
+            userRoleAssignmentRequest: { expiresAt, allowFileTransfer },
         })
         // Refetch to get updated assignment
         const assignments = await api.getUserRoles(user!)
@@ -133,7 +136,7 @@
                         on:change={() => toggleRole(role)}
                         checked={!!assignment} />
                     <label for="role-{role.id}" class="flex-grow-1 mb-0">
-                        <div class="d-flex align-items-center">
+                        <div class="d-flex align-items-center flex-wrap">
                             <span>{role.name}</span>
                             {#if assignment}
                                 {#if assignment.isExpired}
@@ -143,6 +146,11 @@
                                 {:else}
                                     <Badge color="secondary" class="ms-2">Permanent</Badge>
                                 {/if}
+                                {#if assignment.allowFileTransfer === 'deny'}
+                                    <Badge color="danger" class="ms-2">SFTP Denied</Badge>
+                                {:else if assignment.allowFileTransfer === 'allow'}
+                                    <Badge color="success" class="ms-2">SFTP Allowed</Badge>
+                                {/if}
                             {/if}
                         </div>
                         {#if role.description}
@@ -151,22 +159,39 @@
                     </label>
                 </div>
                 {#if assignment}
-                    <div class="mt-2 d-flex align-items-center">
-                        <Input
-                            type="datetime-local"
-                            class="me-2"
-                            style="max-width: 250px;"
-                            value={toInputDatetime(assignment.expiresAt)}
-                            on:change={(e) => {
-                                roleExpirationInputs[role.id] = e.currentTarget.value
-                            }}
-                            placeholder="Expiration (optional)"
-                        />
+                    <div class="mt-2">
+                        <div class="d-flex align-items-center mb-2">
+                            <label class="me-2 text-nowrap" style="min-width: 80px;">Expiration:</label>
+                            <Input
+                                type="datetime-local"
+                                style="max-width: 200px;"
+                                value={toInputDatetime(assignment.expiresAt)}
+                                on:change={(e) => {
+                                    roleExpirationInputs[role.id] = e.currentTarget.value
+                                }}
+                                placeholder="Expiration (optional)"
+                            />
+                        </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <label class="me-2 text-nowrap" style="min-width: 80px;">File Transfer:</label>
+                            <select
+                                class="form-select form-select-sm"
+                                style="max-width: 200px;"
+                                value={assignment.allowFileTransfer ?? ''}
+                                on:change={(e) => {
+                                    roleFileTransferInputs[role.id] = e.currentTarget.value || undefined
+                                }}
+                            >
+                                <option value="">Allow (default)</option>
+                                <option value="allow">Explicitly Allow</option>
+                                <option value="deny">Deny</option>
+                            </select>
+                        </div>
                         <AsyncButton
                             color="secondary"
                             class="btn-sm"
-                            click={() => updateRoleExpiration(role)}
-                        >Update expiration</AsyncButton>
+                            click={() => updateRoleAssignment(role)}
+                        >Update assignment</AsyncButton>
                     </div>
                 {/if}
             </div>

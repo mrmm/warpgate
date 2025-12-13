@@ -14,6 +14,10 @@ pub struct Model {
     pub role_id: Uuid,
     #[sea_orm(nullable)]
     pub expires_at: Option<DateTime<Utc>>,
+    /// SFTP/SCP file transfer permission for this user-role assignment.
+    /// Values: "allow", "deny", or null (allow by default)
+    #[sea_orm(column_type = "String(StringLen::N(16))", nullable)]
+    pub allow_file_transfer: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]

@@ -464,21 +464,41 @@ impl ConfigProvider for DatabaseConfigProvider {
             return Ok(false);
         };
 
-        // Get user's valid (non-expired) role IDs
+        // Get user's valid (non-expired) role assignments
         let user_role_assignments = entities::UserRoleAssignment::Entity::find()
             .filter(entities::UserRoleAssignment::Column::UserId.eq(user_model.id))
             .all(&*db)
             .await?;
 
-        let valid_user_role_ids: HashSet<uuid::Uuid> = user_role_assignments
-            .into_iter()
-            .filter(|assignment| {
-                assignment.expires_at.map(|exp| exp > now).unwrap_or(true)
-            })
-            .map(|assignment| assignment.role_id)
-            .collect();
+        // Filter to valid (non-expired) assignments and check user-role level file transfer permissions
+        let mut user_role_has_allow = false;
+        let mut user_role_has_deny = false;
+        let mut valid_user_role_ids: HashSet<uuid::Uuid> = HashSet::new();
+
+        for assignment in &user_role_assignments {
+            let is_valid = assignment.expires_at.map(|exp| exp > now).unwrap_or(true);
+            if is_valid {
+                valid_user_role_ids.insert(assignment.role_id);
+                // Check user-role level file transfer permission
+                match assignment.allow_file_transfer.as_deref() {
+                    Some("deny") => user_role_has_deny = true,
+                    Some("allow") => user_role_has_allow = true,
+                    _ => {} // null means allow by default at user-role level
+                }
+            }
+        }
 
         if valid_user_role_ids.is_empty() {
+            return Ok(false);
+        }
+
+        // User-role level deny takes highest priority
+        if user_role_has_deny {
+            info!(
+                username,
+                target = target_name,
+                "File transfer denied by user-role assignment"
+            );
             return Ok(false);
         }
 
@@ -488,10 +508,10 @@ impl ConfigProvider for DatabaseConfigProvider {
             .all(&*db)
             .await?;
 
-        // Check for role-level file transfer overrides
+        // Check for target-role level file transfer overrides
         // Priority: deny > allow > inherit from target
-        let mut has_allow = false;
-        let mut has_deny = false;
+        let mut target_role_has_allow = false;
+        let mut target_role_has_deny = false;
 
         for assignment in target_role_assignments {
             // Only consider valid (non-expired) assignments for user's roles
@@ -500,28 +520,39 @@ impl ConfigProvider for DatabaseConfigProvider {
 
             if is_valid && is_user_role {
                 match assignment.allow_file_transfer.as_deref() {
-                    Some("deny") => has_deny = true,
-                    Some("allow") => has_allow = true,
+                    Some("deny") => target_role_has_deny = true,
+                    Some("allow") => target_role_has_allow = true,
                     _ => {} // null means inherit from target
                 }
             }
         }
 
-        // Apply priority: deny > allow > inherit
-        if has_deny {
+        // Target-role level deny
+        if target_role_has_deny {
             info!(
                 username,
                 target = target_name,
-                "File transfer denied by role override"
+                "File transfer denied by target-role assignment"
             );
             return Ok(false);
         }
 
-        if has_allow {
+        // User-role level allow (takes precedence over target default)
+        if user_role_has_allow {
             info!(
                 username,
                 target = target_name,
-                "File transfer allowed by role override"
+                "File transfer allowed by user-role assignment"
+            );
+            return Ok(true);
+        }
+
+        // Target-role level allow
+        if target_role_has_allow {
+            info!(
+                username,
+                target = target_name,
+                "File transfer allowed by target-role assignment"
             );
             return Ok(true);
         }

@@ -9,6 +9,8 @@ Tests:
 - Role-target with allow_file_transfer="allow" allows SFTP
 - Role-target with allow_file_transfer=null inherits from target
 - User with multiple roles, one allows SFTP, one denies - SFTP allowed (OR logic)
+- User-role with allow_file_transfer="deny" blocks SFTP for all targets via that role
+- User-role with allow_file_transfer="allow" allows SFTP (subject to target-role)
 """
 
 from uuid import uuid4
@@ -438,3 +440,240 @@ class TestScpPermissions:
 
         # SCP command should fail
         assert result.returncode != 0, "SCP should be blocked when file transfer denied"
+
+
+class TestUserRoleFileTransfer:
+    """Tests for user-role level file transfer permissions."""
+
+    def test_user_role_deny_blocks_sftp(
+        self,
+        processes: ProcessManager,
+        wg_c_ed25519_pubkey,
+        shared_wg: WarpgateProcess,
+    ):
+        """User-role with allow_file_transfer='deny' blocks SFTP for all targets via that role."""
+        ssh_port = processes.start_ssh_server(
+            trusted_keys=[wg_c_ed25519_pubkey.read_text()],
+        )
+        wait_port(ssh_port)
+
+        url = f"https://localhost:{shared_wg.http_port}"
+        with admin_client(url) as api:
+            role = api.create_role(
+                sdk.RoleDataRequest(name=f"role-{uuid4()}"),
+            )
+            user = api.create_user(sdk.CreateUserRequest(username=f"user-{uuid4()}"))
+            api.create_public_key_credential(
+                user.id,
+                sdk.NewPublicKeyCredential(
+                    label="Public Key",
+                    openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
+                ),
+            )
+            # Add user role with file transfer DENIED at user-role level
+            api.add_user_role(
+                user.id,
+                role.id,
+                sdk.UserRoleAssignmentRequest(allow_file_transfer="deny"),
+            )
+
+            ssh_target = api.create_target(
+                sdk.TargetDataRequest(
+                    name=f"ssh-{uuid4()}",
+                    options=sdk.TargetOptions(
+                        sdk.TargetOptionsTargetSSHOptions(
+                            kind="Ssh",
+                            host="localhost",
+                            port=ssh_port,
+                            username="root",
+                            allow_sftp=True,  # Target allows
+                            auth=sdk.SSHTargetAuth(
+                                sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
+                            ),
+                        )
+                    ),
+                )
+            )
+            # Target-role allows (but user-role denies, should take priority)
+            api.add_target_role(
+                ssh_target.id,
+                role.id,
+                sdk.TargetRoleAssignmentRequest(allow_file_transfer="allow"),
+            )
+
+        success = run_sftp_command(processes, shared_wg, user, ssh_target)
+        assert not success, "SFTP should be blocked by user-role deny"
+
+    def test_user_role_allow_with_target_role_deny_blocks_sftp(
+        self,
+        processes: ProcessManager,
+        wg_c_ed25519_pubkey,
+        shared_wg: WarpgateProcess,
+    ):
+        """User-role allows, but target-role denies - should block SFTP."""
+        ssh_port = processes.start_ssh_server(
+            trusted_keys=[wg_c_ed25519_pubkey.read_text()],
+        )
+        wait_port(ssh_port)
+
+        url = f"https://localhost:{shared_wg.http_port}"
+        with admin_client(url) as api:
+            role = api.create_role(
+                sdk.RoleDataRequest(name=f"role-{uuid4()}"),
+            )
+            user = api.create_user(sdk.CreateUserRequest(username=f"user-{uuid4()}"))
+            api.create_public_key_credential(
+                user.id,
+                sdk.NewPublicKeyCredential(
+                    label="Public Key",
+                    openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
+                ),
+            )
+            # User-role allows
+            api.add_user_role(
+                user.id,
+                role.id,
+                sdk.UserRoleAssignmentRequest(allow_file_transfer="allow"),
+            )
+
+            ssh_target = api.create_target(
+                sdk.TargetDataRequest(
+                    name=f"ssh-{uuid4()}",
+                    options=sdk.TargetOptions(
+                        sdk.TargetOptionsTargetSSHOptions(
+                            kind="Ssh",
+                            host="localhost",
+                            port=ssh_port,
+                            username="root",
+                            allow_sftp=True,
+                            auth=sdk.SSHTargetAuth(
+                                sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
+                            ),
+                        )
+                    ),
+                )
+            )
+            # Target-role denies
+            api.add_target_role(
+                ssh_target.id,
+                role.id,
+                sdk.TargetRoleAssignmentRequest(allow_file_transfer="deny"),
+            )
+
+        success = run_sftp_command(processes, shared_wg, user, ssh_target)
+        assert not success, "SFTP should be blocked by target-role deny"
+
+    def test_user_role_null_with_target_role_allow_allows_sftp(
+        self,
+        processes: ProcessManager,
+        wg_c_ed25519_pubkey,
+        shared_wg: WarpgateProcess,
+    ):
+        """User-role null (allow by default), target-role allows - should allow SFTP."""
+        ssh_port = processes.start_ssh_server(
+            trusted_keys=[wg_c_ed25519_pubkey.read_text()],
+        )
+        wait_port(ssh_port)
+
+        url = f"https://localhost:{shared_wg.http_port}"
+        with admin_client(url) as api:
+            role = api.create_role(
+                sdk.RoleDataRequest(name=f"role-{uuid4()}"),
+            )
+            user = api.create_user(sdk.CreateUserRequest(username=f"user-{uuid4()}"))
+            api.create_public_key_credential(
+                user.id,
+                sdk.NewPublicKeyCredential(
+                    label="Public Key",
+                    openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
+                ),
+            )
+            # User-role with default (null - allows by default)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
+
+            ssh_target = api.create_target(
+                sdk.TargetDataRequest(
+                    name=f"ssh-{uuid4()}",
+                    options=sdk.TargetOptions(
+                        sdk.TargetOptionsTargetSSHOptions(
+                            kind="Ssh",
+                            host="localhost",
+                            port=ssh_port,
+                            username="root",
+                            allow_sftp=False,  # Target denies
+                            auth=sdk.SSHTargetAuth(
+                                sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
+                            ),
+                        )
+                    ),
+                )
+            )
+            # Target-role explicitly allows
+            api.add_target_role(
+                ssh_target.id,
+                role.id,
+                sdk.TargetRoleAssignmentRequest(allow_file_transfer="allow"),
+            )
+
+        success = run_sftp_command(processes, shared_wg, user, ssh_target)
+        assert success, "SFTP should be allowed by target-role allow"
+
+    def test_user_role_explicit_allow_overrides_target_default_deny(
+        self,
+        processes: ProcessManager,
+        wg_c_ed25519_pubkey,
+        shared_wg: WarpgateProcess,
+    ):
+        """User-role explicitly allows, target denies, target-role null - should allow SFTP."""
+        ssh_port = processes.start_ssh_server(
+            trusted_keys=[wg_c_ed25519_pubkey.read_text()],
+        )
+        wait_port(ssh_port)
+
+        url = f"https://localhost:{shared_wg.http_port}"
+        with admin_client(url) as api:
+            role = api.create_role(
+                sdk.RoleDataRequest(name=f"role-{uuid4()}"),
+            )
+            user = api.create_user(sdk.CreateUserRequest(username=f"user-{uuid4()}"))
+            api.create_public_key_credential(
+                user.id,
+                sdk.NewPublicKeyCredential(
+                    label="Public Key",
+                    openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
+                ),
+            )
+            # User-role explicitly allows
+            api.add_user_role(
+                user.id,
+                role.id,
+                sdk.UserRoleAssignmentRequest(allow_file_transfer="allow"),
+            )
+
+            ssh_target = api.create_target(
+                sdk.TargetDataRequest(
+                    name=f"ssh-{uuid4()}",
+                    options=sdk.TargetOptions(
+                        sdk.TargetOptionsTargetSSHOptions(
+                            kind="Ssh",
+                            host="localhost",
+                            port=ssh_port,
+                            username="root",
+                            allow_sftp=False,  # Target denies by default
+                            auth=sdk.SSHTargetAuth(
+                                sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
+                            ),
+                        )
+                    ),
+                )
+            )
+            # Target-role inherits (null)
+            api.add_target_role(
+                ssh_target.id,
+                role.id,
+                sdk.TargetRoleAssignmentRequest(),
+            )
+
+        success = run_sftp_command(processes, shared_wg, user, ssh_target)
+        # User-role allow takes precedence over target default
+        assert success, "SFTP should be allowed by user-role allow"

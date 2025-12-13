@@ -215,6 +215,8 @@ impl DetailApi {
 struct UserRoleAssignmentRequest {
     /// Optional expiration date for the role assignment. If null, the assignment is permanent.
     expires_at: Option<DateTime<Utc>>,
+    /// SFTP/SCP file transfer permission. Values: "allow", "deny", or null (allow by default)
+    allow_file_transfer: Option<String>,
 }
 
 /// Response containing role assignment details with expiration info
@@ -226,6 +228,8 @@ struct UserRoleAssignmentResponse {
     expires_at: Option<DateTime<Utc>>,
     /// Whether the assignment has expired
     is_expired: bool,
+    /// SFTP/SCP file transfer permission. Values: "allow", "deny", or null (allow by default)
+    allow_file_transfer: Option<String>,
 }
 
 #[derive(ApiResponse)]
@@ -319,6 +323,7 @@ impl RolesApi {
                 role: role.into(),
                 expires_at: assignment.expires_at,
                 is_expired,
+                allow_file_transfer: assignment.allow_file_transfer.clone(),
             });
         }
 
@@ -349,6 +354,15 @@ impl RolesApi {
             }
         }
 
+        // Validate allow_file_transfer value
+        if let Some(ref value) = body.allow_file_transfer {
+            if value != "allow" && value != "deny" {
+                return Ok(AddUserRoleResponse::BadRequest(Json(
+                    "allow_file_transfer must be 'allow', 'deny', or null".into(),
+                )));
+            }
+        }
+
         if !UserRoleAssignment::Entity::find()
             .filter(UserRoleAssignment::Column::UserId.eq(id.0))
             .filter(UserRoleAssignment::Column::RoleId.eq(role_id.0))
@@ -364,6 +378,7 @@ impl RolesApi {
             user_id: Set(id.0),
             role_id: Set(role_id.0),
             expires_at: Set(body.expires_at),
+            allow_file_transfer: Set(body.allow_file_transfer.clone()),
             ..Default::default()
         };
 
@@ -396,6 +411,15 @@ impl RolesApi {
             }
         }
 
+        // Validate allow_file_transfer value
+        if let Some(ref value) = body.allow_file_transfer {
+            if value != "allow" && value != "deny" {
+                return Ok(UpdateUserRoleResponse::BadRequest(Json(
+                    "allow_file_transfer must be 'allow', 'deny', or null".into(),
+                )));
+            }
+        }
+
         let Some(_user) = User::Entity::find_by_id(id.0).one(&*db).await? else {
             return Ok(UpdateUserRoleResponse::NotFound);
         };
@@ -415,6 +439,7 @@ impl RolesApi {
 
         let mut model: UserRoleAssignment::ActiveModel = assignment.into();
         model.expires_at = Set(body.expires_at);
+        model.allow_file_transfer = Set(body.allow_file_transfer.clone());
         let updated = model.update(&*db).await?;
 
         let now = Utc::now();
@@ -424,6 +449,7 @@ impl RolesApi {
             role: role.into(),
             expires_at: updated.expires_at,
             is_expired,
+            allow_file_transfer: updated.allow_file_transfer,
         })))
     }
 
