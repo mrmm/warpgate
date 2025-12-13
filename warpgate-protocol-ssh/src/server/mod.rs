@@ -142,6 +142,9 @@ async fn _run_stream<R>(
 where
     R: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let span = tracing::info_span!("SSH", session=%session_id);
+    let _guard = span.enter();
+
     let ret = async move {
         let session = russh::server::run_stream(config, socket, handler).await?;
         session.await?;
@@ -150,7 +153,7 @@ where
     .await;
 
     if let Err(ref error) = ret {
-        error!(session=%session_id, %error, "Session failed");
+        error!(%error, "Session failed");
     }
 
     ret

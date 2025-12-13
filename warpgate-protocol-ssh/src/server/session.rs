@@ -395,7 +395,8 @@ impl ServerSession {
                 Event::Client(e) => {
                     debug!(event=?e, "Event");
                     let span = self.make_logging_span();
-                    if let Err(err) = self.handle_remote_event(e).instrument(span).await {
+                    let _guard = span.enter();
+                    if let Err(err) = self.handle_remote_event(e).await {
                         error!(
                             target = self.target_name().unwrap_or("-"),
                             error = %err,
@@ -406,7 +407,8 @@ impl ServerSession {
                 }
                 Event::ServerHandler(e) => {
                     let span = self.make_logging_span();
-                    if let Err(err) = self.handle_server_handler_event(e).instrument(span).await {
+                    let _guard = span.enter();
+                    if let Err(err) = self.handle_server_handler_event(e).await {
                         error!(
                             target = self.target_name().unwrap_or("-"),
                             error = %err,
@@ -416,6 +418,8 @@ impl ServerSession {
                     }
                 }
                 Event::Command(command) => {
+                    let span = self.make_logging_span();
+                    let _guard = span.enter();
                     debug!(?command, "Session control");
                     if let Err(err) = self.handle_session_control(command).await {
                         error!(
@@ -1957,6 +1961,8 @@ impl ServerSession {
 impl Drop for ServerSession {
     fn drop(&mut self) {
         let _ = self.rc_abort_tx.send(());
+        let span = self.make_logging_span();
+        let _guard = span.enter();
         info!("Closed session");
         debug!("Dropped");
     }
