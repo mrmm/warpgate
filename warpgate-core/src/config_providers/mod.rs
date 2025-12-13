@@ -13,6 +13,15 @@ use warpgate_common::{Secret, Target, User, WarpgateError};
 use warpgate_db_entities as e;
 use warpgate_sso::SsoProviderConfig;
 
+/// Result of target authorization check
+#[derive(Debug, Clone)]
+pub struct TargetAuthResult {
+    /// Whether access to the target is allowed
+    pub allowed: bool,
+    /// Reason for denial (if not allowed)
+    pub denial_reason: Option<String>,
+}
+
 /// Result of file transfer authorization check
 #[derive(Debug, Clone)]
 pub struct FileTransferAuthResult {
@@ -60,11 +69,13 @@ pub trait ConfigProvider {
         supported_credential_types: &[CredentialKind],
     ) -> Result<Option<Box<dyn CredentialPolicy + Sync + Send>>, WarpgateError>;
 
+    /// Check if a user is authorized to access a target.
+    /// Returns TargetAuthResult with allowed status and denial reason if applicable.
     async fn authorize_target(
         &mut self,
         username: &str,
         target: &str,
-    ) -> Result<bool, WarpgateError>;
+    ) -> Result<TargetAuthResult, WarpgateError>;
 
     /// Check if file transfer (SFTP/SCP) is allowed for a user to access a target.
     /// Returns FileTransferAuthResult with allowed status and denial reason if applicable.

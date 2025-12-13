@@ -235,10 +235,13 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> MySqlSession<S> {
                                 .await
                                 .map_err(MySqlError::other)?
                         };
-                        if !target_auth_result {
+                        if !target_auth_result.allowed {
+                            let reason = target_auth_result.denial_reason.unwrap_or_default();
                             warn!(
-                                "Target {} not authorized for user {}",
-                                target_name, user_info.username
+                                username = user_info.username,
+                                target = target_name,
+                                %reason,
+                                "Target not authorized"
                             );
                             return fail(&mut self).await;
                         }

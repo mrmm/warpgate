@@ -1793,10 +1793,15 @@ impl ServerSession {
                                 .authorize_target(&user_info.username, target_name)
                                 .await?
                         };
-                        if !target_auth_result {
+                        if !target_auth_result.allowed {
+                            let reason = target_auth_result
+                                .denial_reason
+                                .unwrap_or_else(|| "access denied".to_string());
                             warn!(
-                                "Target {} not authorized for user {}",
-                                target_name, username
+                                username,
+                                target = target_name,
+                                %reason,
+                                "Target not authorized"
                             );
                             return Ok(AuthResult::Rejected);
                         }

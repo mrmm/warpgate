@@ -345,7 +345,7 @@ impl ConfigProvider for DatabaseConfigProvider {
         &mut self,
         username: &str,
         target_name: &str,
-    ) -> Result<bool, WarpgateError> {
+    ) -> Result<super::TargetAuthResult, WarpgateError> {
         let db = self.db.lock().await;
         let now = Utc::now();
 
@@ -361,56 +361,74 @@ impl ConfigProvider for DatabaseConfigProvider {
 
         let Some(user_model) = user_model else {
             error!("Selected user not found: {}", username);
-            return Ok(false);
+            return Ok(super::TargetAuthResult {
+                allowed: false,
+                denial_reason: Some("user not found".to_string()),
+            });
         };
 
         let Some(target_model) = target_model else {
             warn!("Selected target not found: {}", target_name);
-            return Ok(false);
+            return Ok(super::TargetAuthResult {
+                allowed: false,
+                denial_reason: Some("target not found".to_string()),
+            });
         };
 
-        // Get user's valid (non-expired) role IDs
+        // Get user's role assignments (including expired ones to check for expiration)
         let user_role_assignments = entities::UserRoleAssignment::Entity::find()
             .filter(entities::UserRoleAssignment::Column::UserId.eq(user_model.id))
             .all(&*db)
             .await?;
 
-        let valid_user_role_ids: HashSet<uuid::Uuid> = user_role_assignments
-            .into_iter()
-            .filter(|assignment| {
-                // Assignment is valid if expires_at is NULL or in the future
-                assignment.expires_at.map(|exp| exp > now).unwrap_or(true)
-            })
-            .map(|assignment| assignment.role_id)
-            .collect();
-
-        if valid_user_role_ids.is_empty() {
-            return Ok(false);
+        // Check if user has any role assignments at all
+        if user_role_assignments.is_empty() {
+            return Ok(super::TargetAuthResult {
+                allowed: false,
+                denial_reason: Some("no role assignments for user".to_string()),
+            });
         }
 
-        // Get target's valid (non-expired) role IDs via direct assignment
+        // Separate valid and expired user role assignments
+        let mut valid_user_role_ids: HashSet<uuid::Uuid> = HashSet::new();
+        let mut has_expired_user_roles = false;
+
+        for assignment in &user_role_assignments {
+            let is_valid = assignment.expires_at.map(|exp| exp > now).unwrap_or(true);
+            if is_valid {
+                valid_user_role_ids.insert(assignment.role_id);
+            } else {
+                has_expired_user_roles = true;
+            }
+        }
+
+        if valid_user_role_ids.is_empty() {
+            return Ok(super::TargetAuthResult {
+                allowed: false,
+                denial_reason: Some("all user role assignments have expired".to_string()),
+            });
+        }
+
+        // Get target's role assignments (including expired ones)
         let target_role_assignments = entities::TargetRoleAssignment::Entity::find()
             .filter(entities::TargetRoleAssignment::Column::TargetId.eq(target_model.id))
             .all(&*db)
             .await?;
 
-        let valid_target_role_ids: HashSet<uuid::Uuid> = target_role_assignments
-            .into_iter()
-            .filter(|assignment| {
-                // Assignment is valid if expires_at is NULL or in the future
-                assignment.expires_at.map(|exp| exp > now).unwrap_or(true)
-            })
-            .map(|assignment| assignment.role_id)
-            .collect();
-
-        // Check direct target-role access
-        let direct_access = valid_user_role_ids
-            .intersection(&valid_target_role_ids)
-            .count()
-            > 0;
-
-        if direct_access {
-            return Ok(true);
+        // Check if user has valid access to target via direct assignment
+        let mut has_expired_target_access = false;
+        for assignment in &target_role_assignments {
+            if valid_user_role_ids.contains(&assignment.role_id) {
+                let is_valid = assignment.expires_at.map(|exp| exp > now).unwrap_or(true);
+                if is_valid {
+                    return Ok(super::TargetAuthResult {
+                        allowed: true,
+                        denial_reason: None,
+                    });
+                } else {
+                    has_expired_target_access = true;
+                }
+            }
         }
 
         // Check group-based access if target belongs to a group
@@ -428,11 +446,26 @@ impl ConfigProvider for DatabaseConfigProvider {
             let group_access = valid_user_role_ids.intersection(&group_role_ids).count() > 0;
 
             if group_access {
-                return Ok(true);
+                return Ok(super::TargetAuthResult {
+                    allowed: true,
+                    denial_reason: None,
+                });
             }
         }
 
-        Ok(false)
+        // Determine the most specific denial reason
+        let denial_reason = if has_expired_target_access {
+            "target access has expired".to_string()
+        } else if has_expired_user_roles {
+            "no valid role grants access to this target".to_string()
+        } else {
+            "no role grants access to this target".to_string()
+        };
+
+        Ok(super::TargetAuthResult {
+            allowed: false,
+            denial_reason: Some(denial_reason),
+        })
     }
 
     async fn authorize_file_transfer(
