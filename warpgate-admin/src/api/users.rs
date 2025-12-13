@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use poem::web::Data;
 use poem_openapi::param::{Path, Query};
 use poem_openapi::payload::Json;
@@ -209,10 +210,32 @@ impl DetailApi {
     }
 }
 
+/// Request body for creating or updating a user role assignment
+#[derive(Object, Default)]
+struct UserRoleAssignmentRequest {
+    /// Optional expiration date for the role assignment. If null, the assignment is permanent.
+    expires_at: Option<DateTime<Utc>>,
+    /// SFTP/SCP file transfer permission. Values: "allow", "deny", or null (allow by default)
+    allow_file_transfer: Option<String>,
+}
+
+/// Response containing role assignment details with expiration info
+#[derive(Object)]
+struct UserRoleAssignmentResponse {
+    /// The role details
+    role: RoleConfig,
+    /// Expiration date of the assignment, if any
+    expires_at: Option<DateTime<Utc>>,
+    /// Whether the assignment has expired
+    is_expired: bool,
+    /// SFTP/SCP file transfer permission. Values: "allow", "deny", or null (allow by default)
+    allow_file_transfer: Option<String>,
+}
+
 #[derive(ApiResponse)]
 enum GetUserRolesResponse {
     #[oai(status = 200)]
-    Ok(Json<Vec<RoleConfig>>),
+    Ok(Json<Vec<UserRoleAssignmentResponse>>),
     #[oai(status = 404)]
     NotFound,
 }
@@ -221,14 +244,34 @@ enum GetUserRolesResponse {
 enum AddUserRoleResponse {
     #[oai(status = 201)]
     Created,
+    #[oai(status = 400)]
+    BadRequest(Json<String>),
     #[oai(status = 409)]
     AlreadyExists,
+}
+
+#[derive(ApiResponse)]
+enum UpdateUserRoleResponse {
+    #[oai(status = 200)]
+    Ok(Json<UserRoleAssignmentResponse>),
+    #[oai(status = 400)]
+    BadRequest(Json<String>),
+    #[oai(status = 404)]
+    NotFound,
 }
 
 #[derive(ApiResponse)]
 enum DeleteUserRoleResponse {
     #[oai(status = 204)]
     Deleted,
+    #[oai(status = 404)]
+    NotFound,
+}
+
+#[derive(ApiResponse)]
+enum DeleteExpiredUserRolesResponse {
+    #[oai(status = 200)]
+    Ok(Json<u64>),
     #[oai(status = 404)]
     NotFound,
 }
@@ -250,19 +293,41 @@ impl RolesApi {
     ) -> Result<GetUserRolesResponse, WarpgateError> {
         let db = db.lock().await;
 
-        let Some((_, roles)) = User::Entity::find_by_id(*id)
-            .find_with_related(Role::Entity)
-            .all(&*db)
-            .await
-            .map(|x| x.into_iter().next())
-            .map_err(WarpgateError::from)?
-        else {
+        let Some(user) = User::Entity::find_by_id(*id).one(&*db).await? else {
             return Ok(GetUserRolesResponse::NotFound);
         };
 
-        Ok(GetUserRolesResponse::Ok(Json(
-            roles.into_iter().map(|x| x.into()).collect(),
-        )))
+        // Get all role assignments with their expiration info
+        let assignments = UserRoleAssignment::Entity::find()
+            .filter(UserRoleAssignment::Column::UserId.eq(user.id))
+            .all(&*db)
+            .await?;
+
+        let now = Utc::now();
+        let mut responses = Vec::new();
+
+        for assignment in assignments {
+            let Some(role) = Role::Entity::find_by_id(assignment.role_id)
+                .one(&*db)
+                .await?
+            else {
+                continue;
+            };
+
+            let is_expired = assignment
+                .expires_at
+                .map(|exp| exp < now)
+                .unwrap_or(false);
+
+            responses.push(UserRoleAssignmentResponse {
+                role: role.into(),
+                expires_at: assignment.expires_at,
+                is_expired,
+                allow_file_transfer: assignment.allow_file_transfer.clone(),
+            });
+        }
+
+        Ok(GetUserRolesResponse::Ok(Json(responses)))
     }
 
     #[oai(
@@ -275,9 +340,28 @@ impl RolesApi {
         db: Data<&Arc<Mutex<DatabaseConnection>>>,
         id: Path<Uuid>,
         role_id: Path<Uuid>,
+        body: Json<UserRoleAssignmentRequest>,
         _sec_scheme: AnySecurityScheme,
     ) -> Result<AddUserRoleResponse, WarpgateError> {
         let db = db.lock().await;
+
+        // Validate expires_at is not in the past
+        if let Some(expires_at) = body.expires_at {
+            if expires_at < Utc::now() {
+                return Ok(AddUserRoleResponse::BadRequest(Json(
+                    "expires_at cannot be in the past".into(),
+                )));
+            }
+        }
+
+        // Validate allow_file_transfer value
+        if let Some(ref value) = body.allow_file_transfer {
+            if value != "allow" && value != "deny" {
+                return Ok(AddUserRoleResponse::BadRequest(Json(
+                    "allow_file_transfer must be 'allow', 'deny', or null".into(),
+                )));
+            }
+        }
 
         if !UserRoleAssignment::Entity::find()
             .filter(UserRoleAssignment::Column::UserId.eq(id.0))
@@ -293,12 +377,80 @@ impl RolesApi {
         let values = UserRoleAssignment::ActiveModel {
             user_id: Set(id.0),
             role_id: Set(role_id.0),
+            expires_at: Set(body.expires_at),
+            allow_file_transfer: Set(body.allow_file_transfer.clone()),
             ..Default::default()
         };
 
         values.insert(&*db).await.map_err(WarpgateError::from)?;
 
         Ok(AddUserRoleResponse::Created)
+    }
+
+    #[oai(
+        path = "/users/:id/roles/:role_id",
+        method = "put",
+        operation_id = "update_user_role"
+    )]
+    async fn api_update_user_role(
+        &self,
+        db: Data<&Arc<Mutex<DatabaseConnection>>>,
+        id: Path<Uuid>,
+        role_id: Path<Uuid>,
+        body: Json<UserRoleAssignmentRequest>,
+        _sec_scheme: AnySecurityScheme,
+    ) -> Result<UpdateUserRoleResponse, WarpgateError> {
+        let db = db.lock().await;
+
+        // Validate expires_at is not in the past (if provided)
+        if let Some(expires_at) = body.expires_at {
+            if expires_at < Utc::now() {
+                return Ok(UpdateUserRoleResponse::BadRequest(Json(
+                    "expires_at cannot be in the past".into(),
+                )));
+            }
+        }
+
+        // Validate allow_file_transfer value
+        if let Some(ref value) = body.allow_file_transfer {
+            if value != "allow" && value != "deny" {
+                return Ok(UpdateUserRoleResponse::BadRequest(Json(
+                    "allow_file_transfer must be 'allow', 'deny', or null".into(),
+                )));
+            }
+        }
+
+        let Some(_user) = User::Entity::find_by_id(id.0).one(&*db).await? else {
+            return Ok(UpdateUserRoleResponse::NotFound);
+        };
+
+        let Some(role) = Role::Entity::find_by_id(role_id.0).one(&*db).await? else {
+            return Ok(UpdateUserRoleResponse::NotFound);
+        };
+
+        let Some(assignment) = UserRoleAssignment::Entity::find()
+            .filter(UserRoleAssignment::Column::UserId.eq(id.0))
+            .filter(UserRoleAssignment::Column::RoleId.eq(role_id.0))
+            .one(&*db)
+            .await?
+        else {
+            return Ok(UpdateUserRoleResponse::NotFound);
+        };
+
+        let mut model: UserRoleAssignment::ActiveModel = assignment.into();
+        model.expires_at = Set(body.expires_at);
+        model.allow_file_transfer = Set(body.allow_file_transfer.clone());
+        let updated = model.update(&*db).await?;
+
+        let now = Utc::now();
+        let is_expired = updated.expires_at.map(|exp| exp < now).unwrap_or(false);
+
+        Ok(UpdateUserRoleResponse::Ok(Json(UserRoleAssignmentResponse {
+            role: role.into(),
+            expires_at: updated.expires_at,
+            is_expired,
+            allow_file_transfer: updated.allow_file_transfer,
+        })))
     }
 
     #[oai(
@@ -336,5 +488,33 @@ impl RolesApi {
         model.delete(&*db).await.map_err(WarpgateError::from)?;
 
         Ok(DeleteUserRoleResponse::Deleted)
+    }
+
+    #[oai(
+        path = "/users/:id/roles/expired",
+        method = "delete",
+        operation_id = "delete_expired_user_roles"
+    )]
+    async fn api_delete_expired_user_roles(
+        &self,
+        db: Data<&Arc<Mutex<DatabaseConnection>>>,
+        id: Path<Uuid>,
+        _sec_scheme: AnySecurityScheme,
+    ) -> Result<DeleteExpiredUserRolesResponse, WarpgateError> {
+        let db = db.lock().await;
+
+        let Some(_user) = User::Entity::find_by_id(id.0).one(&*db).await? else {
+            return Ok(DeleteExpiredUserRolesResponse::NotFound);
+        };
+
+        let now = Utc::now();
+        let result = UserRoleAssignment::Entity::delete_many()
+            .filter(UserRoleAssignment::Column::UserId.eq(id.0))
+            .filter(UserRoleAssignment::Column::ExpiresAt.is_not_null())
+            .filter(UserRoleAssignment::Column::ExpiresAt.lt(now))
+            .exec(&*db)
+            .await?;
+
+        Ok(DeleteExpiredUserRolesResponse::Ok(Json(result.rows_affected)))
     }
 }

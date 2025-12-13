@@ -20,8 +20,8 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get install openssh-client expect
-          cargo install just
-          cargo install cargo-llvm-cov
+          cargo install just --locked
+          cargo install cargo-llvm-cov@0.6.14 --locked
           cargo clean
           rustup component add llvm-tools-preview
 

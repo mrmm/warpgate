@@ -27,7 +27,7 @@ class Test:
             )
             user = api.create_user(sdk.CreateUserRequest(username=f"user-{uuid4()}"))
             api.create_password_credential(user.id, sdk.NewPasswordCredential(password="123"))
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             ssh_target = api.create_target(sdk.TargetDataRequest(
                 name=f"ssh-{uuid4()}",
                 options=sdk.TargetOptions(
@@ -36,13 +36,14 @@ class Test:
                         host="localhost",
                         port=ssh_port,
                         username="root",
+                        allow_sftp=True,
                         auth=sdk.SSHTargetAuth(
                             sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                         ),
                     )
                 ),
             ))
-            api.add_target_role(ssh_target.id, role.id)
+            api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         ssh_client = processes.start_ssh_client(
             "-t",

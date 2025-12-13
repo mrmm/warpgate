@@ -11,13 +11,20 @@ use crate::Secret;
 pub struct TargetSSHOptions {
     pub host: String,
     #[serde(default = "_default_ssh_port")]
+    #[oai(default = "_default_ssh_port")]
     pub port: u16,
     #[serde(default = "_default_username")]
+    #[oai(default = "_default_username")]
     pub username: String,
     #[serde(default)]
     pub allow_insecure_algos: Option<bool>,
     #[serde(default)]
     pub auth: SSHTargetAuth,
+    /// Whether to allow SFTP/SCP file transfer for this target.
+    /// Defaults to true. Can be overridden at role-target level.
+    #[serde(default = "_default_true")]
+    #[oai(default = "_default_true")]
+    pub allow_sftp: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Union)]

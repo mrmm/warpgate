@@ -55,6 +55,7 @@ impl Api {
                 auth: SSHTargetAuth::Password(SshTargetPasswordAuth {
                     password: "".to_string().into(),
                 }),
+                allow_sftp: true,
             }),
             None,
         ));

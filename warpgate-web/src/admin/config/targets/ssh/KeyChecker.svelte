@@ -93,7 +93,10 @@
         _state = { state: 'checking', previousResult: _state.state === 'ready' ? _state.result : null }
         try {
             remoteHostKey = await api.checkSshHostKey({
-                checkSshHostKeyRequest: options,
+                checkSshHostKeyRequest: {
+                    host: options.host,
+                    port: options.port,
+                },
             })
         } catch (err) {
             _state = { state: 'error', error: await stringifyError(err) }
@@ -103,6 +106,7 @@
     }
 
     async function trustRemoteKey () {
+        if (!options.port) return
         try {
             await api.addSshKnownHost({
                 addSshKnownHostRequest: {

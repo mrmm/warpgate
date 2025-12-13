@@ -22,7 +22,7 @@ class Test:
             api.create_password_credential(
                 user.id, sdk.NewPasswordCredential(password="123")
             )
-            api.add_user_role(user.id, role.id)
+            api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
             target = api.create_target(sdk.TargetDataRequest(
                 name=f"postgres-{uuid4()}",
                 options=sdk.TargetOptions(sdk.TargetOptionsTargetPostgresOptions(
@@ -37,7 +37,7 @@ class Test:
                     ),
                 )),
             ))
-            api.add_target_role(target.id, role.id)
+            api.add_target_role(target.id, role.id, sdk.TargetRoleAssignmentRequest())
 
         wait_port(db_port, recv=False)
         wait_port(shared_wg.postgres_port, recv=False)

@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Warpgate Web Admin",
-    "version": "v0.17.0-32-g054b9b1a-modified"
+    "version": "v0.18.0-7-g7bd317b-modified"
   },
   "servers": [
     {
@@ -550,6 +550,50 @@
           }
         ],
         "operationId": "get_role_users"
+      }
+    },
+    "/role/{id}/target-groups": {
+      "get": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TargetGroup"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "get_role_target_groups"
       }
     },
     "/tickets": {
@@ -1120,7 +1164,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Role"
+                    "$ref": "#/components/schemas/TargetRoleAssignmentResponse"
                   }
                 }
               }
@@ -1167,9 +1211,29 @@
             "explode": true
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json; charset=utf-8": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetRoleAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "description": ""
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "409": {
             "description": ""
@@ -1184,6 +1248,76 @@
           }
         ],
         "operationId": "add_target_role"
+      },
+      "put": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          },
+          {
+            "name": "role_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json; charset=utf-8": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetRoleAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetRoleAssignmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "update_target_role"
       },
       "delete": {
         "parameters": [
@@ -1230,6 +1364,48 @@
           }
         ],
         "operationId": "delete_target_role"
+      }
+    },
+    "/targets/{id}/roles/expired": {
+      "delete": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "integer",
+                  "format": "uint64"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "delete_expired_target_roles"
       }
     },
     "/target-groups": {
@@ -1436,6 +1612,138 @@
           }
         ],
         "operationId": "delete_target_group"
+      }
+    },
+    "/target-groups/{id}/roles": {
+      "get": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Role"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "get_target_group_roles"
+      }
+    },
+    "/target-groups/{id}/roles/{role_id}": {
+      "post": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          },
+          {
+            "name": "role_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "add_target_group_role"
+      },
+      "delete": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          },
+          {
+            "name": "role_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "delete_target_group_role"
       }
     },
     "/users": {
@@ -1666,7 +1974,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Role"
+                    "$ref": "#/components/schemas/UserRoleAssignmentResponse"
                   }
                 }
               }
@@ -1713,9 +2021,29 @@
             "explode": true
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json; charset=utf-8": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRoleAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "description": ""
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "409": {
             "description": ""
@@ -1730,6 +2058,76 @@
           }
         ],
         "operationId": "add_user_role"
+      },
+      "put": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          },
+          {
+            "name": "role_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json; charset=utf-8": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRoleAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRoleAssignmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "update_user_role"
       },
       "delete": {
         "parameters": [
@@ -1773,6 +2171,48 @@
           }
         ],
         "operationId": "delete_user_role"
+      }
+    },
+    "/users/{id}/roles/expired": {
+      "delete": {
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "required": true,
+            "deprecated": false,
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "integer",
+                  "format": "uint64"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "TokenSecurityScheme": []
+          },
+          {
+            "CookieSecurityScheme": []
+          }
+        ],
+        "operationId": "delete_expired_user_roles"
       }
     },
     "/users/{user_id}/credentials/passwords": {
@@ -3467,13 +3907,62 @@
           }
         }
       },
+      "TargetRoleAssignmentRequest": {
+        "type": "object",
+        "title": "TargetRoleAssignmentRequest",
+        "description": "Request body for creating or updating a target role assignment",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional expiration date for the role assignment. If null, the assignment is permanent."
+          },
+          "allow_file_transfer": {
+            "type": "string",
+            "description": "SFTP/SCP file transfer permission override. Values: \"allow\", \"deny\", or null (inherit from target)"
+          }
+        }
+      },
+      "TargetRoleAssignmentResponse": {
+        "type": "object",
+        "title": "TargetRoleAssignmentResponse",
+        "description": "Response containing role assignment details with expiration info",
+        "required": [
+          "role",
+          "is_expired"
+        ],
+        "properties": {
+          "role": {
+            "description": "The role details",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "description": "The role details"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiration date of the assignment, if any"
+          },
+          "is_expired": {
+            "type": "boolean",
+            "description": "Whether the assignment has expired"
+          },
+          "allow_file_transfer": {
+            "type": "string",
+            "description": "SFTP/SCP file transfer permission override. Values: \"allow\", \"deny\", or null (inherit from target)"
+          }
+        }
+      },
       "TargetSSHOptions": {
         "type": "object",
         "title": "TargetSSHOptions",
         "required": [
           "host",
-          "port",
-          "username",
           "auth"
         ],
         "properties": {
@@ -3482,16 +3971,23 @@
           },
           "port": {
             "type": "integer",
-            "format": "uint16"
+            "format": "uint16",
+            "default": 22
           },
           "username": {
-            "type": "string"
+            "type": "string",
+            "default": "root"
           },
           "allow_insecure_algos": {
             "type": "boolean"
           },
           "auth": {
             "$ref": "#/components/schemas/SSHTargetAuth"
+          },
+          "allow_sftp": {
+            "type": "boolean",
+            "description": "Whether to allow SFTP/SCP file transfer for this target.\nDefaults to true. Can be overridden at role-target level.",
+            "default": true
           }
         }
       },
@@ -3654,6 +4150,57 @@
             "items": {
               "$ref": "#/components/schemas/CredentialKind"
             }
+          }
+        }
+      },
+      "UserRoleAssignmentRequest": {
+        "type": "object",
+        "title": "UserRoleAssignmentRequest",
+        "description": "Request body for creating or updating a user role assignment",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional expiration date for the role assignment. If null, the assignment is permanent."
+          },
+          "allow_file_transfer": {
+            "type": "string",
+            "description": "SFTP/SCP file transfer permission. Values: \"allow\", \"deny\", or null (allow by default)"
+          }
+        }
+      },
+      "UserRoleAssignmentResponse": {
+        "type": "object",
+        "title": "UserRoleAssignmentResponse",
+        "description": "Response containing role assignment details with expiration info",
+        "required": [
+          "role",
+          "is_expired"
+        ],
+        "properties": {
+          "role": {
+            "description": "The role details",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "description": "The role details"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiration date of the assignment, if any"
+          },
+          "is_expired": {
+            "type": "boolean",
+            "description": "Whether the assignment has expired"
+          },
+          "allow_file_transfer": {
+            "type": "string",
+            "description": "SFTP/SCP file transfer permission. Values: \"allow\", \"deny\", or null (allow by default)"
           }
         }
       }

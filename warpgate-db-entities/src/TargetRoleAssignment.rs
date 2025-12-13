@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use poem_openapi::Object;
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
@@ -11,6 +12,12 @@ pub struct Model {
     pub id: i32,
     pub target_id: Uuid,
     pub role_id: Uuid,
+    #[sea_orm(nullable)]
+    pub expires_at: Option<DateTime<Utc>>,
+    /// SFTP/SCP file transfer permission for this role-target assignment.
+    /// Values: "allow", "deny", or null (inherit from target)
+    #[sea_orm(column_type = "String(StringLen::N(16))", nullable)]
+    pub allow_file_transfer: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]

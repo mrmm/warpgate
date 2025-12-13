@@ -1,37 +1,30 @@
-use chrono::{DateTime, Utc};
 use poem_openapi::Object;
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Object)]
-#[sea_orm(table_name = "user_roles")]
-#[oai(rename = "UserRoleAssignment")]
+#[sea_orm(table_name = "target_group_roles")]
+#[oai(rename = "TargetGroupRoleAssignment")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
     pub id: i32,
-    pub user_id: Uuid,
+    pub target_group_id: Uuid,
     pub role_id: Uuid,
-    #[sea_orm(nullable)]
-    pub expires_at: Option<DateTime<Utc>>,
-    /// SFTP/SCP file transfer permission for this user-role assignment.
-    /// Values: "allow", "deny", or null (allow by default)
-    #[sea_orm(column_type = "String(StringLen::N(16))", nullable)]
-    pub allow_file_transfer: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    User,
+    TargetGroup,
     Role,
 }
 
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::User => Entity::belongs_to(super::User::Entity)
-                .from(Column::UserId)
-                .to(super::User::Column::Id)
+            Self::TargetGroup => Entity::belongs_to(super::TargetGroup::Entity)
+                .from(Column::TargetGroupId)
+                .to(super::TargetGroup::Column::Id)
                 .into(),
             Self::Role => Entity::belongs_to(super::Role::Entity)
                 .from(Column::RoleId)

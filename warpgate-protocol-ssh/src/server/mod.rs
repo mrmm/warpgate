@@ -128,12 +128,13 @@ async fn _handle_connection(
 
     tokio::task::Builder::new()
         .name(&format!("SSH {id} protocol"))
-        .spawn(_run_stream(russh_config, wrapped_stream, handler))?;
+        .spawn(_run_stream(id, russh_config, wrapped_stream, handler))?;
 
     Ok(())
 }
 
 async fn _run_stream<R>(
+    session_id: warpgate_common::SessionId,
     config: Arc<russh::server::Config>,
     socket: R,
     handler: ServerHandler,
@@ -141,6 +142,9 @@ async fn _run_stream<R>(
 where
     R: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let span = tracing::info_span!("SSH", session=%session_id);
+    let _guard = span.enter();
+
     let ret = async move {
         let session = russh::server::run_stream(config, socket, handler).await?;
         session.await?;

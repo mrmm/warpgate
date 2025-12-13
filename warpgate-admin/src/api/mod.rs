@@ -33,7 +33,7 @@ pub fn get() -> impl OpenApi {
         ssh_keys::Api,
         logs::Api,
         (targets::ListApi, targets::DetailApi, targets::RolesApi),
-        (target_groups::ListApi, target_groups::DetailApi),
+        (target_groups::ListApi, target_groups::DetailApi, target_groups::RolesApi),
         (users::ListApi, users::DetailApi, users::RolesApi),
         (
             password_credentials::ListApi,

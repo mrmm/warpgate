@@ -141,6 +141,7 @@ pub async fn is_user_admin(req: &Request, auth: &RequestAuthorization) -> poem::
             && config_provider
                 .authorize_target(username, &target.name)
                 .await?
+                .allowed
         {
             drop(config_provider);
             return Ok(true);

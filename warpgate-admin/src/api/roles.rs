@@ -14,7 +14,7 @@ use warpgate_common::{
     Role as RoleConfig, Target as TargetConfig, User as UserConfig, WarpgateError,
 };
 use warpgate_core::consts::BUILTIN_ADMIN_ROLE_NAME;
-use warpgate_db_entities::{Role, Target, User};
+use warpgate_db_entities::{Role, Target, TargetGroup, TargetGroupRoleAssignment, User};
 
 use super::AnySecurityScheme;
 
@@ -132,6 +132,14 @@ enum GetRoleTargetsResponse {
 enum GetRoleUsersResponse {
     #[oai(status = 200)]
     Ok(Json<Vec<UserConfig>>),
+    #[oai(status = 404)]
+    NotFound,
+}
+
+#[derive(ApiResponse)]
+enum GetRoleTargetGroupsResponse {
+    #[oai(status = 200)]
+    Ok(Json<Vec<TargetGroup::Model>>),
     #[oai(status = 404)]
     NotFound,
 }
@@ -256,5 +264,41 @@ impl DetailApi {
                 .map(TryInto::try_into)
                 .collect::<Result<Vec<_>, WarpgateError>>()?,
         )))
+    }
+
+    #[oai(
+        path = "/role/:id/target-groups",
+        method = "get",
+        operation_id = "get_role_target_groups"
+    )]
+    async fn api_get_role_target_groups(
+        &self,
+        db: Data<&Arc<Mutex<DatabaseConnection>>>,
+        id: Path<Uuid>,
+        _sec_scheme: AnySecurityScheme,
+    ) -> Result<GetRoleTargetGroupsResponse, WarpgateError> {
+        let db = db.lock().await;
+
+        let Some(_role) = Role::Entity::find_by_id(id.0).one(&*db).await? else {
+            return Ok(GetRoleTargetGroupsResponse::NotFound);
+        };
+
+        // Get all target group assignments for this role
+        let assignments = TargetGroupRoleAssignment::Entity::find()
+            .filter(TargetGroupRoleAssignment::Column::RoleId.eq(id.0))
+            .all(&*db)
+            .await?;
+
+        let mut groups = Vec::new();
+        for assignment in assignments {
+            if let Some(group) = TargetGroup::Entity::find_by_id(assignment.target_group_id)
+                .one(&*db)
+                .await?
+            {
+                groups.push(group);
+            }
+        }
+
+        Ok(GetRoleTargetGroupsResponse::Ok(Json(groups)))
     }
 }

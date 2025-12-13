@@ -290,6 +290,14 @@ impl ServerSession {
         }
     }
 
+    fn target_name(&self) -> Option<&str> {
+        match &self.target {
+            TargetSelection::Found(target, _) => Some(&target.name),
+            TargetSelection::NotFound(name) => Some(name),
+            TargetSelection::None => None,
+        }
+    }
+
     fn map_channel(&self, ch: &ServerChannelId) -> Result<Uuid, WarpgateError> {
         self.channel_map
             .get_by_left(ch)
@@ -387,22 +395,38 @@ impl ServerSession {
                 Event::Client(e) => {
                     debug!(event=?e, "Event");
                     let span = self.make_logging_span();
-                    if let Err(err) = self.handle_remote_event(e).instrument(span).await {
-                        error!("Client event handler error: {:?}", err);
+                    let _guard = span.enter();
+                    if let Err(err) = self.handle_remote_event(e).await {
+                        error!(
+                            target = self.target_name().unwrap_or("-"),
+                            error = %err,
+                            "Client event handler error"
+                        );
                         // break;
                     }
                 }
                 Event::ServerHandler(e) => {
                     let span = self.make_logging_span();
-                    if let Err(err) = self.handle_server_handler_event(e).instrument(span).await {
-                        error!("Server event handler error: {:?}", err);
+                    let _guard = span.enter();
+                    if let Err(err) = self.handle_server_handler_event(e).await {
+                        error!(
+                            target = self.target_name().unwrap_or("-"),
+                            error = %err,
+                            "Server event handler error"
+                        );
                         // break;
                     }
                 }
                 Event::Command(command) => {
+                    let span = self.make_logging_span();
+                    let _guard = span.enter();
                     debug!(?command, "Session control");
                     if let Err(err) = self.handle_session_control(command).await {
-                        error!("Command handler error: {:?}", err);
+                        error!(
+                            target = self.target_name().unwrap_or("-"),
+                            error = %err,
+                            "Session control error"
+                        );
                         // break;
                     }
                 }
@@ -1141,6 +1165,51 @@ impl ServerSession {
             }
             Ok::<&str, _>(command) => {
                 debug!(channel=%channel_id, %command, "Requested exec");
+
+                // Check file transfer permissions for SCP commands
+                // SCP uses exec with commands like "scp -t filename" or "scp -f filename"
+                if command.starts_with("scp ") {
+                    if let (TargetSelection::Found(target, ssh_opts), Some(username)) =
+                        (&self.target, &self.username)
+                    {
+                        let auth_result = self
+                            .services
+                            .config_provider
+                            .lock()
+                            .await
+                            .authorize_file_transfer(username, &target.name, ssh_opts.allow_sftp)
+                            .await
+                            .unwrap_or_else(|_| warpgate_core::FileTransferAuthResult {
+                                allowed: false,
+                                denial_reason: Some("authorization check failed".to_string()),
+                            });
+
+                        if !auth_result.allowed {
+                            let reason = auth_result.denial_reason.unwrap_or_else(|| "unknown reason".to_string());
+                            warn!(
+                                channel=%channel_id,
+                                username,
+                                target=%target.name,
+                                %command,
+                                reason=%reason,
+                                "SCP command denied - file transfer not allowed"
+                            );
+                            // Send error message to client's stderr before denying
+                            let error_msg = format!("warpgate: file transfer denied: {}\r\n", reason);
+                            if let Some(session) = self.session_handle.clone() {
+                                self.channel_writer.write_extended(
+                                    session,
+                                    server_channel_id.0,
+                                    1, // stderr
+                                    CryptoVec::from_slice(error_msg.as_bytes()),
+                                );
+                                let _ = self.channel_writer.flush().await;
+                            }
+                            return Err(SshClientError::FileTransferDenied(reason).into());
+                        }
+                    }
+                }
+
                 let _ = self.maybe_connect_remote().await;
                 let _ = self.send_command(RCCommand::Channel(
                     channel_id,
@@ -1246,6 +1315,49 @@ impl ServerSession {
     ) -> Result<(), SshClientError> {
         let channel_id = self.map_channel(&server_channel_id)?;
         info!(channel=%channel_id, "Requesting subsystem {}", &name);
+
+        // Check file transfer permissions for SFTP subsystem
+        if name == "sftp" {
+            if let (TargetSelection::Found(target, ssh_opts), Some(username)) =
+                (&self.target, &self.username)
+            {
+                let auth_result = self
+                    .services
+                    .config_provider
+                    .lock()
+                    .await
+                    .authorize_file_transfer(username, &target.name, ssh_opts.allow_sftp)
+                    .await
+                    .unwrap_or_else(|_| warpgate_core::FileTransferAuthResult {
+                        allowed: false,
+                        denial_reason: Some("authorization check failed".to_string()),
+                    });
+
+                if !auth_result.allowed {
+                    let reason = auth_result.denial_reason.unwrap_or_else(|| "unknown reason".to_string());
+                    warn!(
+                        channel=%channel_id,
+                        username,
+                        target=%target.name,
+                        reason=%reason,
+                        "SFTP subsystem denied - file transfer not allowed"
+                    );
+                    // Send error message to client's stderr before denying
+                    let error_msg = format!("warpgate: file transfer denied: {}\r\n", reason);
+                    if let Some(session) = self.session_handle.clone() {
+                        self.channel_writer.write_extended(
+                            session,
+                            server_channel_id.0,
+                            1, // stderr
+                            CryptoVec::from_slice(error_msg.as_bytes()),
+                        );
+                        let _ = self.channel_writer.flush().await;
+                    }
+                    return Err(SshClientError::FileTransferDenied(reason));
+                }
+            }
+        }
+
         let _ = self.maybe_connect_remote().await;
         self.send_command_and_wait(RCCommand::Channel(
             channel_id,
@@ -1681,10 +1793,15 @@ impl ServerSession {
                                 .authorize_target(&user_info.username, target_name)
                                 .await?
                         };
-                        if !target_auth_result {
+                        if !target_auth_result.allowed {
+                            let reason = target_auth_result
+                                .denial_reason
+                                .unwrap_or_else(|| "access denied".to_string());
                             warn!(
-                                "Target {} not authorized for user {}",
-                                target_name, username
+                                username,
+                                target = target_name,
+                                %reason,
+                                "Target not authorized"
                             );
                             return Ok(AuthResult::Rejected);
                         }
@@ -1849,6 +1966,8 @@ impl ServerSession {
 impl Drop for ServerSession {
     fn drop(&mut self) {
         let _ = self.rc_abort_tx.send(());
+        let span = self.make_logging_span();
+        let _guard = span.enter();
         info!("Closed session");
         debug!("Dropped");
     }

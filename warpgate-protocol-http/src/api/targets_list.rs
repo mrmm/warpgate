@@ -95,10 +95,11 @@ impl Api {
                             let Some(username) = auth.username() else {
                                 return false;
                             };
-                            matches!(
-                                config_provider.authorize_target(username, &name).await,
-                                Ok(true)
-                            )
+                            config_provider
+                                .authorize_target(username, &name)
+                                .await
+                                .map(|r| r.allowed)
+                                .unwrap_or(false)
                         }
                     }
                 }

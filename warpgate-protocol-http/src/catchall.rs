@@ -137,6 +137,7 @@ async fn get_target_for_request(
                     .await
                     .authorize_target(username, &target.0.name)
                     .await?
+                    .allowed
             {
                 return Ok(None);
             }

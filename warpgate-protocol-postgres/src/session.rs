@@ -162,8 +162,14 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> PostgresSession<S> {
                                     .await
                                     .map_err(PostgresError::other)?
                             };
-                            if !target_auth_result {
-                                warn!("Target {target_name} not authorized for user {username}",);
+                            if !target_auth_result.allowed {
+                                let reason = target_auth_result.denial_reason.unwrap_or_default();
+                                warn!(
+                                    username,
+                                    target = target_name,
+                                    %reason,
+                                    "Target not authorized"
+                                );
                                 return fail(&mut self).await;
                             }
 

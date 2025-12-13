@@ -52,7 +52,7 @@ def setup_user_and_target(
                 openssh_public_key=open("ssh-keys/id_ed25519.pub").read().strip(),
             ),
         )
-        api.add_user_role(user.id, role.id)
+        api.add_user_role(user.id, role.id, sdk.UserRoleAssignmentRequest())
         ssh_target = api.create_target(
             sdk.TargetDataRequest(
                 name=f"ssh-{uuid4()}",
@@ -62,6 +62,7 @@ def setup_user_and_target(
                         host="localhost",
                         port=ssh_port,
                         username="root",
+                        allow_sftp=True,
                         auth=sdk.SSHTargetAuth(
                             sdk.SSHTargetAuthSshTargetPublicKeyAuth(kind="PublicKey")
                         ),
@@ -69,7 +70,7 @@ def setup_user_and_target(
                 ),
             )
         )
-        api.add_target_role(ssh_target.id, role.id)
+        api.add_target_role(ssh_target.id, role.id, sdk.TargetRoleAssignmentRequest())
         return user, ssh_target
 
 
